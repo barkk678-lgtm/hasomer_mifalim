@@ -336,53 +336,64 @@ const FILES_PAGE_SIZE = 5;
 function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categories, dragActive, onDragOver, onDragLeave, onDrop, page, setPage }) {
   const pageRows = rows.slice(page * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE + FILES_PAGE_SIZE);
   return (
-    <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+    // The drag handlers + highlight live on this OUTER wrapper (the full card), not some inner
+    // element sized to its content — otherwise the highlighted "drop here" area shrinks down to
+    // whatever's inside (e.g. just the empty-state sentence) while the real, whole-card drop
+    // target underneath looks unmarked. dragleave also has to check relatedTarget: without that,
+    // it fires (and clears the highlight) every time the pointer crosses onto a child element
+    // inside the card, not just when it actually leaves the card — making the zone flicker/feel
+    // broken while dragging over it.
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) onDragLeave(); }}
+      onDrop={onDrop}
+      className="rounded-xl transition-colors"
+      style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2, background: dragActive ? C.ochreSoft : 'transparent' }}
+    >
       <Card title={`${title} (${rows.length})`}>
-        <div className="rounded-lg" style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2 }}>
-          {rows.length === 0 ? (
-            <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
-          ) : (
-            <>
-              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr style={{ background: '#E3E4D6' }}>
-                      {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
-                        <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageRows.map((f, i) => (
-                      <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-                        <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
-                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
-                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
-                        {categories.length > 1 && (
-                          <td className="px-3 py-2">
-                            <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
-                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </td>
-                        )}
-                        <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
-                        <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
-                      </tr>
+        {rows.length === 0 ? (
+          <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
+        ) : (
+          <>
+            <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr style={{ background: '#E3E4D6' }}>
+                    {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
+                      <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
                     ))}
-                  </tbody>
-                </table>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((f, i) => (
+                    <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                      <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
+                      {categories.length > 1 && (
+                        <td className="px-3 py-2">
+                          <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </td>
+                      )}
+                      <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
+                      <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rows.length > FILES_PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-3 mt-2 text-xs">
+                <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
+                <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
+                <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
               </div>
-              {rows.length > FILES_PAGE_SIZE && (
-                <div className="flex items-center justify-center gap-3 mt-2 text-xs">
-                  <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
-                  <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
-                  <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </Card>
     </div>
   );

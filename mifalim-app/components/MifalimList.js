@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
@@ -87,6 +87,19 @@ export function MifalModal({ open, onClose, existing, onSave }) {
   const [draft, setDraft] = useState(existing || null);
   const [saving, setSaving] = useState(false);
 
+  // `existing` only reflects the row the user clicked "edit" on for as long as this component
+  // instance stays mounted with the same open/existing props — since useState's initializer only
+  // runs once (on first mount), it can capture 'type'/null from before any row was picked. Without
+  // resyncing on every open, the very first edit shows the "create" type-picker (whose type buttons
+  // reset `draft` to a blank new-mifal shape) instead of the real edit form, and saving that blank
+  // draft silently overwrites the mifal's actual data.
+  useEffect(() => {
+    if (open) {
+      setStep(existing ? 'form' : 'type');
+      setDraft(existing || null);
+    }
+  }, [open, existing]);
+
   function openWithType(type) { setDraft(createEmptyDraft(type)); setStep('form'); }
 
   async function handleSave() {
@@ -98,8 +111,6 @@ export function MifalModal({ open, onClose, existing, onSave }) {
   }
 
   function handleClose() {
-    setStep(existing ? 'form' : 'type');
-    setDraft(existing || null);
     onClose();
   }
 
