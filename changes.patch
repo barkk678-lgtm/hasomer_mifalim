@@ -1,482 +1,240 @@
-diff --git a/.gitignore b/.gitignore
+diff --git a/mifalim-app/app/calendar/page.js b/mifalim-app/app/calendar/page.js
 new file mode 100644
-index 0000000..26e8a55
+index 0000000..e80fb03
 --- /dev/null
-+++ b/.gitignore
-@@ -0,0 +1 @@
-+changes.patch
-diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index fe33d5e..ba60fda 100644
---- a/mifalim-app/components/MifalDetailView.js
-+++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,8 +1,8 @@
- 'use client';
--import { useState } from 'react';
-+import { useState, useEffect } from 'react';
- import Link from 'next/link';
--import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
--import { MifalModal } from './MifalimList';
-+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download } from 'lucide-react';
-+import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
- import { useMifal } from '../lib/useMifal';
- import { useMifalTasks } from '../lib/useMifalTasks';
- import { useBudget } from '../lib/useBudget';
-@@ -10,8 +10,9 @@ import { useStakeholders } from '../lib/useStakeholders';
- import { usePricingTiers } from '../lib/usePricingTiers';
- import { useOccurrences } from '../lib/useOccurrences';
- import { useFiles } from '../lib/useFiles';
--import { C, ALL_TYPES } from '../lib/designSystem';
--import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid } from './ui';
-+import { usePreparations } from '../lib/usePreparations';
-+import { C, ALL_TYPES, FILE_CATEGORIES } from '../lib/designSystem';
-+import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
- 
- const UNASSIGNED = '__unassigned__';
- 
-@@ -46,7 +47,7 @@ const URGENCY_STYLE = {
- };
- 
- function dateRangeLabel(m) {
--  const single = m.type === 'day_trip';
-+  const single = m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single');
-   const start = m.date_mode === 'backup' ? (single ? m.backup_date : m.backup_start_date) : (single ? m.event_date : m.start_date);
-   const end = single ? start : (m.date_mode === 'backup' ? m.backup_end_date : m.end_date);
-   if (!start) return '—';
-@@ -235,40 +236,163 @@ const OCCURRENCE_COLUMNS = [
- ];
- function emptyOccurrenceDraft() { return { name: '', start_date: '', end_date: '', notes: '' }; }
- 
--function OccurrencesTab({ mifalId }) {
--  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifalId);
-+function PrepQuickCreateModal({ open, onClose, parentMifal, onCreate }) {
-+  const [draft, setDraft] = useState(null);
-+  const [saving, setSaving] = useState(false);
++++ b/mifalim-app/app/calendar/page.js
+@@ -0,0 +1,22 @@
++import { redirect } from 'next/navigation';
++import { createClient } from '../../lib/supabaseServer';
++import TopNav from '../../components/TopNav';
++import CalendarPageView from '../../components/CalendarPageView';
 +
-+  useEffect(() => {
-+    if (open && parentMifal) {
-+      setDraft({
-+        ...createEmptyDraft('preparation'),
-+        lead_role: parentMifal.lead_role || '',
-+        target_municipalities: parentMifal.target_municipalities || [],
-+        work_start_date: parentMifal.work_start_date || '',
-+      });
-+    }
-+  }, [open, parentMifal]);
++export default async function CalendarRoute() {
++  const supabase = createClient();
++  const { data: { user } } = await supabase.auth.getUser();
 +
-+  async function handleSave() {
-+    if (!draft?.name?.trim()) return;
-+    setSaving(true);
-+    await onCreate(draft);
-+    setSaving(false);
-+    onClose();
-+  }
- 
-   return (
--    <Card title="מופעים">
--      {loading ? (
--        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
--      ) : (
--        <InlineGrid
--          columns={OCCURRENCE_COLUMNS}
--          rows={occurrences}
--          makeEmptyDraft={emptyOccurrenceDraft}
--          onCreate={createOccurrence}
--          onUpdate={updateOccurrence}
--          onDelete={deleteOccurrence}
--        />
--      )}
--    </Card>
-+    <Modal
-+      open={open}
-+      onClose={onClose}
-+      title={`יצירת הכנת מדריכים עבור "${parentMifal?.name || ''}"`}
-+      footer={draft ? (
-+        <>
-+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
-+          <button disabled={saving || !draft.name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.name.trim() ? 0.6 : 1 }}>
-+            {saving ? 'שומר...' : 'יצירה'}
-+          </button>
-+        </>
-+      ) : null}
-+    >
-+      {draft && <MifalForm draft={draft} setDraft={setDraft} />}
-+    </Modal>
-+  );
-+}
++  if (!user) redirect('/login');
 +
-+function OccurrencesTab({ mifal }) {
-+  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifal.id);
-+  const { preparations, loading: prepsLoading, createPreparation } = usePreparations(mifal.id);
-+  const [prepModalOpen, setPrepModalOpen] = useState(false);
++  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
 +
 +  return (
 +    <div>
-+      <PrepQuickCreateModal open={prepModalOpen} onClose={() => setPrepModalOpen(false)} parentMifal={mifal} onCreate={createPreparation} />
-+      <Card title="מופעים">
-+        {loading ? (
-+          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-+        ) : (
-+          <InlineGrid
-+            columns={OCCURRENCE_COLUMNS}
-+            rows={occurrences}
-+            makeEmptyDraft={emptyOccurrenceDraft}
-+            onCreate={createOccurrence}
-+            onUpdate={updateOccurrence}
-+            onDelete={deleteOccurrence}
-+          />
-+        )}
-+      </Card>
-+      <Card title="הכנות מדריכים משויכות" right={
-+        <button onClick={() => setPrepModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.linkBlue }}>
-+          <Wrench size={13} /> צור הכנת מדריכים
-+        </button>
-+      }>
-+        {prepsLoading ? (
-+          <p className="text-xs" style={{ color: C.inkSoft }}>טוען...</p>
-+        ) : preparations.length === 0 ? (
-+          <p className="text-xs" style={{ color: C.inkSoft }}>לא נוצרו עדיין רשומות הכנת מדריכים עבור מפעל זה.</p>
-+        ) : (
-+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+            <table className="w-full text-sm border-collapse">
-+              <thead><tr style={{ background: '#E3E4D6' }}>{['שם ההכנה', 'תאריכים', 'סטטוס'].map(h => <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>)}</tr></thead>
-+              <tbody>
-+                {preparations.map((p, i) => (
-+                  <tr key={p.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-+                    <td className="px-3 py-2"><Link href={`/mifal/${p.id}`} className="font-semibold hover:underline" style={{ color: C.linkBlue }}>{p.name}</Link></td>
-+                    <td className="px-3 py-2 text-xs" style={{ color: C.ink }}>{dateRangeLabel(p)}</td>
-+                    <td className="px-3 py-2"><StatusBadge status={p.status} /></td>
-+                  </tr>
-+                ))}
-+              </tbody>
-+            </table>
++      <TopNav userEmail={user.email} role={profile?.role || '...'} />
++      <main className="max-w-7xl mx-auto p-8">
++        <CalendarPageView />
++      </main>
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/CalendarPageView.js b/mifalim-app/components/CalendarPageView.js
+new file mode 100644
+index 0000000..1122504
+--- /dev/null
++++ b/mifalim-app/components/CalendarPageView.js
+@@ -0,0 +1,21 @@
++'use client';
++import { useRouter } from 'next/navigation';
++import { useCalendarEvents } from '../lib/useCalendarEvents';
++import { C } from '../lib/designSystem';
++import CalendarView from './CalendarView';
++
++export default function CalendarPageView() {
++  const { mifalim, loading } = useCalendarEvents();
++  const router = useRouter();
++
++  return (
++    <div>
++      <h1 className="text-2xl font-bold mb-5" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>לוח שנה</h1>
++      {loading ? (
++        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
++      ) : (
++        <CalendarView mifalim={mifalim} onOpen={id => router.push(`/mifal/${id}`)} />
++      )}
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/CalendarView.js b/mifalim-app/components/CalendarView.js
+new file mode 100644
+index 0000000..ffe6c1c
+--- /dev/null
++++ b/mifalim-app/components/CalendarView.js
+@@ -0,0 +1,102 @@
++'use client';
++import { useState } from 'react';
++import { ChevronRight, ChevronLeft } from 'lucide-react';
++import { C, NUMFONT, HOLIDAYS } from '../lib/designSystem';
++
++const HEB_WEEKDAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
++
++function toDateOnly(d) { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; }
++function diffDays(a, b) { return Math.round((toDateOnly(b) - toDateOnly(a)) / 86400000); }
++function toISO(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
++function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
++
++function buildEvents(mifalim) {
++  const events = [];
++  mifalim.forEach(m => {
++    const single = isSingleDateType(m);
++    const origStart = single ? m.event_date : m.start_date;
++    const origEnd = single ? m.event_date : m.end_date;
++    const tone = m.type === 'preparation' ? 'preparation' : 'original';
++    if (origStart) events.push({ mifalId: m.id, label: m.name, tone, start: new Date(origStart), end: new Date(origEnd || origStart) });
++    const backStart = single ? m.backup_date : m.backup_start_date;
++    const backEnd = single ? m.backup_date : m.backup_end_date;
++    if (backStart) events.push({ mifalId: m.id, label: `${m.name} (מועד ב')`, tone: 'backup', start: new Date(backStart), end: new Date(backEnd || backStart) });
++    (m.occurrences || []).forEach(occ => {
++      if (!occ.start_date) return;
++      events.push({ mifalId: m.id, label: `${occ.name} (${m.name})`, tone: 'occurrence', start: new Date(occ.start_date), end: new Date(occ.end_date || occ.start_date) });
++    });
++  });
++  return events;
++}
++
++function WeekRow({ days, events, onOpen, isLast }) {
++  const weekStart = days[0].date;
++  const weekEvents = events.map(ev => {
++    const s = Math.max(0, diffDays(weekStart, ev.start));
++    const e = Math.min(6, diffDays(weekStart, ev.end));
++    return { ...ev, s, e };
++  }).filter(ev => diffDays(weekStart, ev.end) >= 0 && diffDays(weekStart, ev.start) <= 6);
++  const lanes = [];
++  weekEvents.forEach(ev => { let li = lanes.findIndex(lane => lane.every(o => ev.s > o.e || ev.e < o.s)); if (li === -1) { li = lanes.length; lanes.push([]); } lanes[li].push(ev); ev.lane = li; });
++  const maxLanes = Math.max(1, lanes.length);
++  return (
++    <div style={{ borderBottom: isLast ? 'none' : `1px solid ${C.line}` }}>
++      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: `26px repeat(${maxLanes},20px)`, gap: 1, padding: 2, background: C.line }}>
++        {days.map((d, i) => (
++          <div key={i} style={{ gridColumn: i + 1, gridRow: 1, opacity: d.inMonth ? 1 : 0.35, paddingRight: 3, background: C.surface }}>
++            <div className="text-xs font-semibold" style={NUMFONT}>{d.date.getDate()}</div>
++            {d.holiday && <div className="text-[9px] truncate" style={{ color: C.ochre }}>{d.holiday}</div>}
 +          </div>
-+        )}
-+      </Card>
-+    </div>
-   );
- }
- 
- /* ============================== FILES TAB ============================== */
--function FilesTab({ mifalId }) {
--  const { files, loading, uploadFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
--  const [uploading, setUploading] = useState(false);
--
--  async function handleFileChange(e) {
--    const file = e.target.files?.[0];
--    e.target.value = '';
--    if (!file) return;
--    setUploading(true);
--    await uploadFile(file);
--    setUploading(false);
--  }
-+const FILES_PAGE_SIZE = 5;
-+
-+function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categories, dragActive, onDragOver, onDragLeave, onDrop, page, setPage }) {
-+  const pageRows = rows.slice(page * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE + FILES_PAGE_SIZE);
-+  return (
-+    <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-+      <Card title={`${title} (${rows.length})`}>
-+        <div className="rounded-lg" style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2 }}>
-+          {rows.length === 0 ? (
-+            <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
-+          ) : (
-+            <>
-+              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+                <table className="w-full text-sm border-collapse">
-+                  <thead>
-+                    <tr style={{ background: '#E3E4D6' }}>
-+                      {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
-+                        <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-+                      ))}
-+                    </tr>
-+                  </thead>
-+                  <tbody>
-+                    {pageRows.map((f, i) => (
-+                      <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-+                        <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
-+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
-+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
-+                        {categories.length > 1 && (
-+                          <td className="px-3 py-2">
-+                            <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
-+                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-+                            </select>
-+                          </td>
-+                        )}
-+                        <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
-+                        <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
-+                      </tr>
-+                    ))}
-+                  </tbody>
-+                </table>
-+              </div>
-+              {rows.length > FILES_PAGE_SIZE && (
-+                <div className="flex items-center justify-center gap-3 mt-2 text-xs">
-+                  <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
-+                  <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
-+                  <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
-+                </div>
-+              )}
-+            </>
-+          )}
-+        </div>
-+      </Card>
++        ))}
++        {weekEvents.map((ev, idx) => (
++          <button key={idx} onClick={() => onOpen(ev.mifalId)} title={ev.label}
++            style={{ gridColumn: `${ev.s + 1} / ${ev.e + 2}`, gridRow: ev.lane + 2, background: ev.tone === 'original' ? C.forest : ev.tone === 'backup' ? C.ochre : ev.tone === 'preparation' ? C.linkBlue : C.steel, color: '#fff', fontSize: 10, borderRadius: 3, padding: '0 5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right' }}>
++            {ev.label}
++          </button>
++        ))}
++        {Array.from({ length: maxLanes * 7 }).map((_, idx) => {
++          const row = Math.floor(idx / 7) + 2, col = (idx % 7) + 1;
++          const occupied = weekEvents.some(ev => ev.lane + 2 === row && col >= ev.s + 1 && col <= ev.e + 1);
++          return occupied ? null : <div key={`f${idx}`} style={{ gridColumn: col, gridRow: row, background: C.surface }} />;
++        })}
++      </div>
 +    </div>
 +  );
 +}
 +
-+function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
-+  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
-+  const [pages, setPages] = useState({});
-+  const [dragCat, setDragCat] = useState(null);
-+  const isFlat = categories.length === 1;
- 
-   async function handleDownload(f) {
-     const url = await getDownloadUrl(f);
-@@ -276,29 +400,59 @@ function FilesTab({ mifalId }) {
-   }
- 
-   return (
--    <Card title="קבצים">
--      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer mb-4" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
--        <Upload size={15} /> {uploading ? 'מעלה...' : 'העלאת קובץ'}
--        <input type="file" className="hidden" onChange={handleFileChange} disabled={uploading} />
--      </label>
++// Shared, single source of truth for both the master Calendar page and any contextual calendar view.
++export default function CalendarView({ mifalim, onOpen, cursor: controlledCursor, setCursor: controlledSetCursor }) {
++  const [innerCursor, setInnerCursor] = useState(new Date());
++  const cursor = controlledCursor || innerCursor;
++  const setCursor = controlledSetCursor || setInnerCursor;
++
++  const year = cursor.getFullYear(), month = cursor.getMonth();
++  const firstOfMonth = new Date(year, month, 1);
++  const gridStart = new Date(firstOfMonth); gridStart.setDate(gridStart.getDate() - gridStart.getDay());
++  const allDays = [];
++  for (let i = 0; i < 42; i++) { const d = new Date(gridStart); d.setDate(d.getDate() + i); allDays.push({ date: d, inMonth: d.getMonth() === month, holiday: HOLIDAYS[toISO(d)] }); }
++  const weeks = []; for (let i = 0; i < 6; i++) weeks.push(allDays.slice(i * 7, i * 7 + 7));
++  const events = buildEvents(mifalim);
++
++  return (
 +    <div>
-+      <div className="flex items-center justify-between mb-3">
-+        <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצי {isFlat ? 'הפרויקט' : 'המפעל'}</h3>
++      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
 +        <div className="flex items-center gap-2">
-+          {files.length > 0 && (
-+            <ExportButton
-+              rows={files.map(f => ({ ...f, modified_by: f.profiles?.full_name || '—' }))}
-+              filename="קבצים.xlsx"
-+              columns={[{ key: 'name', label: 'שם' }, { key: 'category', label: 'קטגוריה' }, { key: 'modified_at', label: 'עודכן' }, { key: 'modified_by', label: 'עודכן ע"י' }]}
-+            />
-+          )}
-+          <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
-+            העלאת קובץ
-+            <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, categories[0]); e.target.value = ''; }} />
-+          </label>
++          <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="p-2 rounded-lg" style={{ border: `1px solid ${C.line}` }}><ChevronRight size={16} /></button>
++          <span className="text-sm font-semibold w-32 text-center" style={{ color: C.forestDark }}>{cursor.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}</span>
++          <button onClick={() => setCursor(new Date(year, month + 1, 1))} className="p-2 rounded-lg" style={{ border: `1px solid ${C.line}` }}><ChevronLeft size={16} /></button>
++        </div>
++        <div className="flex gap-3 text-xs flex-wrap" style={{ color: C.inkSoft }}>
++          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.forest }} />מועד מקורי</span>
++          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.ochre }} />מועד ב'</span>
++          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.steel }} />מופע</span>
++          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.linkBlue }} />הכנת מדריכים</span>
 +        </div>
 +      </div>
-+      {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
-       {loading ? (
-         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
--      ) : files.length === 0 ? (
--        <p className="text-sm" style={{ color: C.inkSoft }}>אין קבצים עדיין.</p>
--      ) : (
--        <table className="w-full text-sm border-collapse">
--          <tbody>
--            {files.map(f => (
--              <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
--                <td className="px-4 py-2"><button onClick={() => handleDownload(f)} className="hover:underline" style={{ color: C.linkBlue }}>{f.name}</button></td>
--                <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
--                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteFile(f)} title="מחיקה" /></td>
--              </tr>
--            ))}
--          </tbody>
--        </table>
--      )}
--    </Card>
-+      ) : isFlat ? (
-+        <FilesSection
-+          title={categories[0]}
-+          rows={files}
-+          onRemove={deleteFile}
-+          onRecategorize={recategorizeFile}
-+          onDownload={handleDownload}
-+          categories={categories}
-+          dragActive={dragCat === categories[0]}
-+          onDragOver={e => { e.preventDefault(); setDragCat(categories[0]); }}
-+          onDragLeave={() => setDragCat(null)}
-+          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, categories[0]); setDragCat(null); }}
-+          page={pages[categories[0]] || 0}
-+          setPage={p => setPages(x => ({ ...x, [categories[0]]: p }))}
-+        />
-+      ) : categories.map(cat => (
-+        <FilesSection
-+          key={cat}
-+          title={cat}
-+          rows={files.filter(f => f.category === cat)}
-+          onRemove={deleteFile}
-+          onRecategorize={recategorizeFile}
-+          onDownload={handleDownload}
-+          categories={categories}
-+          dragActive={dragCat === cat}
-+          onDragOver={e => { e.preventDefault(); setDragCat(cat); }}
-+          onDragLeave={() => setDragCat(null)}
-+          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, cat); setDragCat(null); }}
-+          page={pages[cat] || 0}
-+          setPage={p => setPages(x => ({ ...x, [cat]: p }))}
-+        />
-+      ))}
++      <div className="grid grid-cols-7 gap-0 rounded-t-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, borderBottom: 'none' }}>{HEB_WEEKDAYS.map(w => <div key={w} className="text-center text-xs font-bold py-1.5" style={{ color: '#fff', background: C.forest }}>{w}</div>)}</div>
++      <div className="rounded-b-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
++        {weeks.map((week, i) => <WeekRow key={i} days={week} events={events} onOpen={onOpen} isLast={i === weeks.length - 1} />)}
++      </div>
 +    </div>
-   );
- }
++  );
++}
+diff --git a/mifalim-app/components/TopNav.js b/mifalim-app/components/TopNav.js
+index f94aae1..c19b967 100644
+--- a/mifalim-app/components/TopNav.js
++++ b/mifalim-app/components/TopNav.js
+@@ -1,7 +1,7 @@
+ 'use client';
+ import Link from 'next/link';
+ import { usePathname } from 'next/navigation';
+-import { TableIcon, ListChecks, Layers, Lock } from 'lucide-react';
++import { TableIcon, ListChecks, Layers, Lock, CalendarDays } from 'lucide-react';
+ import { C } from '../lib/designSystem';
+ import SignOutButton from './SignOutButton';
  
-@@ -492,9 +646,11 @@ export default function MifalDetailView({ mifalId }) {
-         <button onClick={() => setTab('budget')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'budget' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-           <Wallet size={14} /> תקציב
-         </button>
--        <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
--          <CalendarDays size={14} /> מופעים
--        </button>
-+        {!isPrep && (
-+          <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-+            <CalendarDays size={14} /> מופעים
-+          </button>
-+        )}
-         <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-           <Upload size={14} /> קבצים
-         </button>
-@@ -502,7 +658,7 @@ export default function MifalDetailView({ mifalId }) {
- 
-       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
-       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
--      {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
-+      {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
-       {tab === 'files' && <FilesTab mifalId={mifal.id} />}
-     </div>
-   );
-diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
-index f30a854..b92ef9b 100644
---- a/mifalim-app/components/MifalimList.js
-+++ b/mifalim-app/components/MifalimList.js
-@@ -17,7 +17,7 @@ function dateRangeLabel(m) {
-   return isSingleDateType(m) ? fmt(start) : `${fmt(start)}-${fmt(end)}`;
- }
- 
--function createEmptyDraft(type) {
-+export function createEmptyDraft(type) {
-   const base = {
-     type, name: '', lead_role: '', target_audience: [], target_municipalities: [],
-     comments: '', work_start_date: '', date_mode: 'original', status: 'מתוכנן',
-@@ -29,7 +29,7 @@ function createEmptyDraft(type) {
-   return { ...base, seminar_type: SEMINAR_TYPES[0], start_date: '', end_date: '', backup_start_date: '', backup_end_date: '' };
- }
- 
--function MifalForm({ draft, setDraft }) {
-+export function MifalForm({ draft, setDraft }) {
-   function set(patch) { setDraft(d => ({ ...d, ...patch })); }
-   const isPrep = draft.type === 'preparation';
-   const dateSingle = draft.type === 'day_trip' || (isPrep && draft.prep_date_mode === 'single');
+@@ -10,7 +10,7 @@ import SignOutButton from './SignOutButton';
+ const NAV_ITEMS = [
+   { key: 'all', label: 'כל המפעלים', icon: TableIcon, href: '/' },
+   { key: 'tasks', label: 'משימות מכלל המפעלים', icon: ListChecks, href: '/tasks' },
+-  { key: 'calendar', label: 'לוח שנה', href: null },
++  { key: 'calendar', label: 'לוח שנה', icon: CalendarDays, href: '/calendar' },
+   { key: 'financials', label: 'סיכום יתרות שנתי', href: null },
+   { key: 'mega', label: 'פרויקטי על', icon: Layers, href: '/mega' },
+ ];
 diff --git a/mifalim-app/lib/designSystem.js b/mifalim-app/lib/designSystem.js
-index 2ce939d..17085aa 100644
+index 17085aa..ea3eff2 100644
 --- a/mifalim-app/lib/designSystem.js
 +++ b/mifalim-app/lib/designSystem.js
-@@ -32,6 +32,7 @@ export const SEMINAR_TYPES = ['סמינר פתיחת שנה', 'סמינר התע
- export const STATUS_OPTIONS = ['מתוכנן', 'בעבודה', 'ממתין להפקת לקחים', 'הסתיים', 'בוטל'];
- export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre', 'ממתין להפקת לקחים': 'amber', 'הסתיים': 'good', 'בוטל': 'rust' };
+@@ -34,6 +34,12 @@ export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre',
  export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
-+export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
+ export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
  
++export const HOLIDAYS = {
++  '2026-03-03': 'פורים', '2026-04-02': 'פסח (א׳)', '2026-04-09': 'פסח (אחרון)', '2026-05-22': 'שבועות',
++  '2026-07-23': "תשעה באב", '2026-09-12': 'ראש השנה', '2026-09-13': 'ראש השנה (ב׳)', '2026-09-21': 'יום כיפור',
++  '2026-09-26': 'סוכות', '2026-10-03': 'שמיני עצרת', '2026-10-04': 'שמחת תורה', '2026-12-04': 'חנוכה (נר א׳)', '2026-12-12': 'חנוכה (נר אחרון)',
++};
++
  export const ALL_TYPES = {
    day_trip: { label: 'טיול חד יומי', icon: Compass },
-diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
-index 2724a7c..dbe5f12 100644
---- a/mifalim-app/lib/useFiles.js
-+++ b/mifalim-app/lib/useFiles.js
-@@ -13,7 +13,7 @@ export function useFiles(ownerType, ownerId) {
-   const reload = useCallback(async () => {
-     if (!ownerId) return;
-     setLoading(true);
--    const { data, error } = await supabase.from('files').select('*').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
-+    const { data, error } = await supabase.from('files').select('*, profiles(full_name)').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
-     if (error) console.error('שגיאה בטעינת קבצים:', error);
-     setFiles(data || []);
-     setLoading(false);
-@@ -21,16 +21,27 @@ export function useFiles(ownerType, ownerId) {
- 
-   useEffect(() => { reload(); }, [reload]);
- 
--  async function uploadFile(file) {
-+  async function uploadFiles(fileList, category) {
-     const { data: { user } } = await supabase.auth.getUser();
--    const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
--    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
--    if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); return null; }
--    const { data, error } = await supabase.from('files').insert({
--      owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, modified_by: user?.id,
--    }).select().single();
--    if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); return null; }
--    setFiles(prev => [data, ...prev]);
-+    const uploaded = [];
-+    for (const file of Array.from(fileList)) {
-+      const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
-+      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-+      if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
-+      const { data, error } = await supabase.from('files').insert({
-+        owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
-+      }).select('*, profiles(full_name)').single();
-+      if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
-+      uploaded.push(data);
-+    }
-+    if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
-+    return uploaded;
-+  }
-+
-+  async function recategorizeFile(id, category) {
-+    const { data, error } = await supabase.from('files').update({ category }).eq('id', id).select('*, profiles(full_name)').single();
-+    if (error) { console.error('שגיאה בעדכון קטגוריית קובץ:', error); return null; }
-+    setFiles(prev => prev.map(f => (f.id === id ? data : f)));
-     return data;
-   }
- 
-@@ -47,5 +58,5 @@ export function useFiles(ownerType, ownerId) {
-     return data.signedUrl;
-   }
- 
--  return { files, loading, uploadFile, deleteFile, getDownloadUrl };
-+  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl };
- }
-diff --git a/mifalim-app/lib/usePreparations.js b/mifalim-app/lib/usePreparations.js
+   multi_day: { label: 'טיול רב יומי / מחנה', icon: Tent },
+diff --git a/mifalim-app/lib/useCalendarEvents.js b/mifalim-app/lib/useCalendarEvents.js
 new file mode 100644
-index 0000000..46f98ec
+index 0000000..c2fd7e2
 --- /dev/null
-+++ b/mifalim-app/lib/usePreparations.js
-@@ -0,0 +1,31 @@
++++ b/mifalim-app/lib/useCalendarEvents.js
+@@ -0,0 +1,32 @@
 +'use client';
 +import { useState, useEffect, useCallback } from 'react';
 +import { createClient } from './supabaseClient';
 +
-+// "הכנות מדריכים משויכות" — mifalim rows with type='preparation' whose parent_mifal_id
-+// points back at the mifal being viewed.
-+export function usePreparations(parentMifalId) {
++// Master calendar reads from the same mifalim + occurrences data as everywhere else in the
++// app — this hook just fetches both in bulk and nests each mifal's occurrences client-side,
++// so CalendarView's buildEvents() can stay identical to the original's in-memory version.
++export function useCalendarEvents() {
 +  const supabase = createClient();
-+  const [preparations, setPreparations] = useState([]);
++  const [mifalim, setMifalim] = useState([]);
 +  const [loading, setLoading] = useState(true);
 +
 +  const reload = useCallback(async () => {
-+    if (!parentMifalId) return;
 +    setLoading(true);
-+    const { data, error } = await supabase.from('mifalim').select('*').eq('type', 'preparation').eq('parent_mifal_id', parentMifalId).order('created_at', { ascending: false });
-+    if (error) console.error('שגיאה בטעינת הכנות מדריכים:', error);
-+    setPreparations(data || []);
++    const [{ data: mifalimData, error: e1 }, { data: occData, error: e2 }] = await Promise.all([
++      supabase.from('mifalim').select('id, type, name, prep_date_mode, event_date, backup_date, start_date, end_date, backup_start_date, backup_end_date'),
++      supabase.from('occurrences').select('mifal_id, name, start_date, end_date'),
++    ]);
++    if (e1) console.error('שגיאה בטעינת מפעלים ללוח השנה:', e1);
++    if (e2) console.error('שגיאה בטעינת מופעים ללוח השנה:', e2);
++    const withOccurrences = (mifalimData || []).map(m => ({
++      ...m,
++      occurrences: (occData || []).filter(o => o.mifal_id === m.id),
++    }));
++    setMifalim(withOccurrences);
 +    setLoading(false);
-+  }, [parentMifalId]);
++  }, []);
 +
 +  useEffect(() => { reload(); }, [reload]);
 +
-+  async function createPreparation(mifal) {
-+    const { data, error } = await supabase.from('mifalim').insert({ ...mifal, type: 'preparation', parent_mifal_id: parentMifalId }).select().single();
-+    if (error) { console.error('שגיאה ביצירת הכנת מדריכים:', error); return null; }
-+    setPreparations(prev => [data, ...prev]);
-+    return data;
-+  }
-+
-+  return { preparations, loading, createPreparation };
++  return { mifalim, loading };
 +}
-diff --git a/mifalim-app/supabase/schema/03_profiles_read_policy.sql b/mifalim-app/supabase/schema/03_profiles_read_policy.sql
-new file mode 100644
-index 0000000..f9e4940
---- /dev/null
-+++ b/mifalim-app/supabase/schema/03_profiles_read_policy.sql
-@@ -0,0 +1,7 @@
-+-- Any signed-in user can read basic profile info (full_name) of other users —
-+-- needed to display "uploaded by" on files, and matches the rest of the app
-+-- (stakeholders, task assignees, etc.) where team members' names are visible
-+-- to everyone. Full RBAC/visibility restrictions are deferred to the end of
-+-- the project per the agreed plan; this only widens *read* access to profiles,
-+-- it does not touch the existing self-read / super_admin policies.
-+create policy "profiles: authenticated read" on profiles for select using (auth.role() = 'authenticated');
