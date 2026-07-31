@@ -32,6 +32,7 @@ export const SEMINAR_TYPES = ['סמינר פתיחת שנה', 'סמינר התע
 export const STATUS_OPTIONS = ['מתוכנן', 'בעבודה', 'ממתין להפקת לקחים', 'הסתיים', 'בוטל'];
 export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre', 'ממתין להפקת לקחים': 'amber', 'הסתיים': 'good', 'בוטל': 'rust' };
 export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
+export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
 
 export const ALL_TYPES = {
   day_trip: { label: 'טיול חד יומי', icon: Compass },

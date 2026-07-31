@@ -1,8 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
-import { MifalModal } from './MifalimList';
+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download } from 'lucide-react';
+import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
@@ -10,8 +10,9 @@ import { useStakeholders } from '../lib/useStakeholders';
 import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
-import { C, ALL_TYPES } from '../lib/designSystem';
-import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid } from './ui';
+import { usePreparations } from '../lib/usePreparations';
+import { C, ALL_TYPES, FILE_CATEGORIES } from '../lib/designSystem';
+import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
 
 const UNASSIGNED = '__unassigned__';
 
@@ -46,7 +47,7 @@ const URGENCY_STYLE = {
 };
 
 function dateRangeLabel(m) {
-  const single = m.type === 'day_trip';
+  const single = m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single');
   const start = m.date_mode === 'backup' ? (single ? m.backup_date : m.backup_start_date) : (single ? m.event_date : m.start_date);
   const end = single ? start : (m.date_mode === 'backup' ? m.backup_end_date : m.end_date);
   if (!start) return '—';
@@ -235,40 +236,163 @@ const OCCURRENCE_COLUMNS = [
 ];
 function emptyOccurrenceDraft() { return { name: '', start_date: '', end_date: '', notes: '' }; }
 
-function OccurrencesTab({ mifalId }) {
-  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifalId);
+function PrepQuickCreateModal({ open, onClose, parentMifal, onCreate }) {
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open && parentMifal) {
+      setDraft({
+        ...createEmptyDraft('preparation'),
+        lead_role: parentMifal.lead_role || '',
+        target_municipalities: parentMifal.target_municipalities || [],
+        work_start_date: parentMifal.work_start_date || '',
+      });
+    }
+  }, [open, parentMifal]);
+
+  async function handleSave() {
+    if (!draft?.name?.trim()) return;
+    setSaving(true);
+    await onCreate(draft);
+    setSaving(false);
+    onClose();
+  }
 
   return (
-    <Card title="מופעים">
-      {loading ? (
-        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-      ) : (
-        <InlineGrid
-          columns={OCCURRENCE_COLUMNS}
-          rows={occurrences}
-          makeEmptyDraft={emptyOccurrenceDraft}
-          onCreate={createOccurrence}
-          onUpdate={updateOccurrence}
-          onDelete={deleteOccurrence}
-        />
-      )}
-    </Card>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`יצירת הכנת מדריכים עבור "${parentMifal?.name || ''}"`}
+      footer={draft ? (
+        <>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
+          <button disabled={saving || !draft.name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.name.trim() ? 0.6 : 1 }}>
+            {saving ? 'שומר...' : 'יצירה'}
+          </button>
+        </>
+      ) : null}
+    >
+      {draft && <MifalForm draft={draft} setDraft={setDraft} />}
+    </Modal>
+  );
+}
+
+function OccurrencesTab({ mifal }) {
+  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifal.id);
+  const { preparations, loading: prepsLoading, createPreparation } = usePreparations(mifal.id);
+  const [prepModalOpen, setPrepModalOpen] = useState(false);
+
+  return (
+    <div>
+      <PrepQuickCreateModal open={prepModalOpen} onClose={() => setPrepModalOpen(false)} parentMifal={mifal} onCreate={createPreparation} />
+      <Card title="מופעים">
+        {loading ? (
+          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+        ) : (
+          <InlineGrid
+            columns={OCCURRENCE_COLUMNS}
+            rows={occurrences}
+            makeEmptyDraft={emptyOccurrenceDraft}
+            onCreate={createOccurrence}
+            onUpdate={updateOccurrence}
+            onDelete={deleteOccurrence}
+          />
+        )}
+      </Card>
+      <Card title="הכנות מדריכים משויכות" right={
+        <button onClick={() => setPrepModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.linkBlue }}>
+          <Wrench size={13} /> צור הכנת מדריכים
+        </button>
+      }>
+        {prepsLoading ? (
+          <p className="text-xs" style={{ color: C.inkSoft }}>טוען...</p>
+        ) : preparations.length === 0 ? (
+          <p className="text-xs" style={{ color: C.inkSoft }}>לא נוצרו עדיין רשומות הכנת מדריכים עבור מפעל זה.</p>
+        ) : (
+          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+            <table className="w-full text-sm border-collapse">
+              <thead><tr style={{ background: '#E3E4D6' }}>{['שם ההכנה', 'תאריכים', 'סטטוס'].map(h => <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {preparations.map((p, i) => (
+                  <tr key={p.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-3 py-2"><Link href={`/mifal/${p.id}`} className="font-semibold hover:underline" style={{ color: C.linkBlue }}>{p.name}</Link></td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.ink }}>{dateRangeLabel(p)}</td>
+                    <td className="px-3 py-2"><StatusBadge status={p.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
 /* ============================== FILES TAB ============================== */
-function FilesTab({ mifalId }) {
-  const { files, loading, uploadFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
-  const [uploading, setUploading] = useState(false);
+const FILES_PAGE_SIZE = 5;
 
-  async function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploading(true);
-    await uploadFile(file);
-    setUploading(false);
-  }
+function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categories, dragActive, onDragOver, onDragLeave, onDrop, page, setPage }) {
+  const pageRows = rows.slice(page * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE + FILES_PAGE_SIZE);
+  return (
+    <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      <Card title={`${title} (${rows.length})`}>
+        <div className="rounded-lg" style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2 }}>
+          {rows.length === 0 ? (
+            <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
+          ) : (
+            <>
+              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr style={{ background: '#E3E4D6' }}>
+                      {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
+                        <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((f, i) => (
+                      <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                        <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
+                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
+                        {categories.length > 1 && (
+                          <td className="px-3 py-2">
+                            <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
+                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </td>
+                        )}
+                        <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
+                        <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {rows.length > FILES_PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-3 mt-2 text-xs">
+                  <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
+                  <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
+                  <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
+  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
+  const [pages, setPages] = useState({});
+  const [dragCat, setDragCat] = useState(null);
+  const isFlat = categories.length === 1;
 
   async function handleDownload(f) {
     const url = await getDownloadUrl(f);
@@ -276,29 +400,59 @@ function FilesTab({ mifalId }) {
   }
 
   return (
-    <Card title="קבצים">
-      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer mb-4" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
-        <Upload size={15} /> {uploading ? 'מעלה...' : 'העלאת קובץ'}
-        <input type="file" className="hidden" onChange={handleFileChange} disabled={uploading} />
-      </label>
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצי {isFlat ? 'הפרויקט' : 'המפעל'}</h3>
+        <div className="flex items-center gap-2">
+          {files.length > 0 && (
+            <ExportButton
+              rows={files.map(f => ({ ...f, modified_by: f.profiles?.full_name || '—' }))}
+              filename="קבצים.xlsx"
+              columns={[{ key: 'name', label: 'שם' }, { key: 'category', label: 'קטגוריה' }, { key: 'modified_at', label: 'עודכן' }, { key: 'modified_by', label: 'עודכן ע"י' }]}
+            />
+          )}
+          <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
+            העלאת קובץ
+            <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, categories[0]); e.target.value = ''; }} />
+          </label>
+        </div>
+      </div>
+      {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-      ) : files.length === 0 ? (
-        <p className="text-sm" style={{ color: C.inkSoft }}>אין קבצים עדיין.</p>
-      ) : (
-        <table className="w-full text-sm border-collapse">
-          <tbody>
-            {files.map(f => (
-              <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td className="px-4 py-2"><button onClick={() => handleDownload(f)} className="hover:underline" style={{ color: C.linkBlue }}>{f.name}</button></td>
-                <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteFile(f)} title="מחיקה" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Card>
+      ) : isFlat ? (
+        <FilesSection
+          title={categories[0]}
+          rows={files}
+          onRemove={deleteFile}
+          onRecategorize={recategorizeFile}
+          onDownload={handleDownload}
+          categories={categories}
+          dragActive={dragCat === categories[0]}
+          onDragOver={e => { e.preventDefault(); setDragCat(categories[0]); }}
+          onDragLeave={() => setDragCat(null)}
+          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, categories[0]); setDragCat(null); }}
+          page={pages[categories[0]] || 0}
+          setPage={p => setPages(x => ({ ...x, [categories[0]]: p }))}
+        />
+      ) : categories.map(cat => (
+        <FilesSection
+          key={cat}
+          title={cat}
+          rows={files.filter(f => f.category === cat)}
+          onRemove={deleteFile}
+          onRecategorize={recategorizeFile}
+          onDownload={handleDownload}
+          categories={categories}
+          dragActive={dragCat === cat}
+          onDragOver={e => { e.preventDefault(); setDragCat(cat); }}
+          onDragLeave={() => setDragCat(null)}
+          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, cat); setDragCat(null); }}
+          page={pages[cat] || 0}
+          setPage={p => setPages(x => ({ ...x, [cat]: p }))}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -492,9 +646,11 @@ export default function MifalDetailView({ mifalId }) {
         <button onClick={() => setTab('budget')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'budget' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
           <Wallet size={14} /> תקציב
         </button>
-        <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-          <CalendarDays size={14} /> מופעים
-        </button>
+        {!isPrep && (
+          <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+            <CalendarDays size={14} /> מופעים
+          </button>
+        )}
         <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
           <Upload size={14} /> קבצים
         </button>
@@ -502,7 +658,7 @@ export default function MifalDetailView({ mifalId }) {
 
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
-      {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
+      {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
       {tab === 'files' && <FilesTab mifalId={mifal.id} />}
     </div>
   );

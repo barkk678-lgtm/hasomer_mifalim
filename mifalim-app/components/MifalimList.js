@@ -17,7 +17,7 @@ function dateRangeLabel(m) {
   return isSingleDateType(m) ? fmt(start) : `${fmt(start)}-${fmt(end)}`;
 }
 
-function createEmptyDraft(type) {
+export function createEmptyDraft(type) {
   const base = {
     type, name: '', lead_role: '', target_audience: [], target_municipalities: [],
     comments: '', work_start_date: '', date_mode: 'original', status: 'מתוכנן',
@@ -29,7 +29,7 @@ function createEmptyDraft(type) {
   return { ...base, seminar_type: SEMINAR_TYPES[0], start_date: '', end_date: '', backup_start_date: '', backup_end_date: '' };
 }
 
-function MifalForm({ draft, setDraft }) {
+export function MifalForm({ draft, setDraft }) {
   function set(patch) { setDraft(d => ({ ...d, ...patch })); }
   const isPrep = draft.type === 'preparation';
   const dateSingle = draft.type === 'day_trip' || (isPrep && draft.prep_date_mode === 'single');

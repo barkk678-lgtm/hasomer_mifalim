@@ -13,7 +13,7 @@ export function useFiles(ownerType, ownerId) {
   const reload = useCallback(async () => {
     if (!ownerId) return;
     setLoading(true);
-    const { data, error } = await supabase.from('files').select('*').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
+    const { data, error } = await supabase.from('files').select('*, profiles(full_name)').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
     if (error) console.error('שגיאה בטעינת קבצים:', error);
     setFiles(data || []);
     setLoading(false);
@@ -21,16 +21,27 @@ export function useFiles(ownerType, ownerId) {
 
   useEffect(() => { reload(); }, [reload]);
 
-  async function uploadFile(file) {
+  async function uploadFiles(fileList, category) {
     const { data: { user } } = await supabase.auth.getUser();
-    const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
-    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-    if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); return null; }
-    const { data, error } = await supabase.from('files').insert({
-      owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, modified_by: user?.id,
-    }).select().single();
-    if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); return null; }
-    setFiles(prev => [data, ...prev]);
+    const uploaded = [];
+    for (const file of Array.from(fileList)) {
+      const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
+      if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
+      const { data, error } = await supabase.from('files').insert({
+        owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
+      }).select('*, profiles(full_name)').single();
+      if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
+      uploaded.push(data);
+    }
+    if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
+    return uploaded;
+  }
+
+  async function recategorizeFile(id, category) {
+    const { data, error } = await supabase.from('files').update({ category }).eq('id', id).select('*, profiles(full_name)').single();
+    if (error) { console.error('שגיאה בעדכון קטגוריית קובץ:', error); return null; }
+    setFiles(prev => prev.map(f => (f.id === id ? data : f)));
     return data;
   }
 
@@ -47,5 +58,5 @@ export function useFiles(ownerType, ownerId) {
     return data.signedUrl;
   }
 
-  return { files, loading, uploadFile, deleteFile, getDownloadUrl };
+  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl };
 }
