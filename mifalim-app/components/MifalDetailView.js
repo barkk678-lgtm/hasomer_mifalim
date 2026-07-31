@@ -1,13 +1,14 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
 import { useStakeholders } from '../lib/useStakeholders';
 import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
+import { useFiles } from '../lib/useFiles';
 import { C, ALL_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
 
@@ -263,6 +264,52 @@ function OccurrencesTab({ mifalId }) {
   );
 }
 
+/* ============================== FILES TAB ============================== */
+function FilesTab({ mifalId }) {
+  const { files, loading, uploadFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    await uploadFile(file);
+    setUploading(false);
+  }
+
+  async function handleDownload(f) {
+    const url = await getDownloadUrl(f);
+    if (url) window.open(url, '_blank');
+  }
+
+  return (
+    <Card title="קבצים">
+      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer mb-4" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
+        <Upload size={15} /> {uploading ? 'מעלה...' : 'העלאת קובץ'}
+        <input type="file" className="hidden" onChange={handleFileChange} disabled={uploading} />
+      </label>
+      {loading ? (
+        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+      ) : files.length === 0 ? (
+        <p className="text-sm" style={{ color: C.inkSoft }}>אין קבצים עדיין.</p>
+      ) : (
+        <table className="w-full text-sm border-collapse">
+          <tbody>
+            {files.map(f => (
+              <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td className="px-4 py-2"><button onClick={() => handleDownload(f)} className="hover:underline" style={{ color: C.linkBlue }}>{f.name}</button></td>
+                <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
+                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteFile(f)} title="מחיקה" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
 function PricingTiersSection({ mifalId }) {
   const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
@@ -454,11 +501,15 @@ export default function MifalDetailView({ mifalId }) {
         <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
           <CalendarDays size={14} /> מופעים
         </button>
+        <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+          <Upload size={14} /> קבצים
+        </button>
       </div>
 
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
       {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
+      {tab === 'files' && <FilesTab mifalId={mifal.id} />}
     </div>
   );
 }

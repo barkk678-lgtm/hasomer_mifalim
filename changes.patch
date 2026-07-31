@@ -1,71 +1,64 @@
 diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index 3132cfb..498056a 100644
+index 498056a..2891ac9 100644
 --- a/mifalim-app/components/MifalDetailView.js
 +++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,12 +1,13 @@
+@@ -1,13 +1,14 @@
  'use client';
  import { useState } from 'react';
  import Link from 'next/link';
--import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon } from 'lucide-react';
-+import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays } from 'lucide-react';
+-import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays } from 'lucide-react';
++import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
  import { useMifal } from '../lib/useMifal';
  import { useMifalTasks } from '../lib/useMifalTasks';
  import { useBudget } from '../lib/useBudget';
  import { useStakeholders } from '../lib/useStakeholders';
  import { usePricingTiers } from '../lib/usePricingTiers';
-+import { useOccurrences } from '../lib/useOccurrences';
+ import { useOccurrences } from '../lib/useOccurrences';
++import { useFiles } from '../lib/useFiles';
  import { C, ALL_TYPES } from '../lib/designSystem';
  import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
  
-@@ -208,6 +209,60 @@ function TasksTab({ mifalId }) {
+@@ -263,6 +264,52 @@ function OccurrencesTab({ mifalId }) {
    );
  }
  
-+/* ============================== OCCURRENCES TAB ============================== */
-+function OccurrencesTab({ mifalId }) {
-+  const { occurrences, loading, createOccurrence, deleteOccurrence } = useOccurrences(mifalId);
-+  const [name, setName] = useState('');
-+  const [startDate, setStartDate] = useState('');
-+  const [endDate, setEndDate] = useState('');
-+  const [notes, setNotes] = useState('');
++/* ============================== FILES TAB ============================== */
++function FilesTab({ mifalId }) {
++  const { files, loading, uploadFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
++  const [uploading, setUploading] = useState(false);
 +
-+  async function handleAdd(e) {
-+    e.preventDefault();
-+    if (!name.trim()) return;
-+    await createOccurrence({ name: name.trim(), start_date: startDate || null, end_date: endDate || null, notes: notes.trim() });
-+    setName(''); setStartDate(''); setEndDate(''); setNotes('');
++  async function handleFileChange(e) {
++    const file = e.target.files?.[0];
++    e.target.value = '';
++    if (!file) return;
++    setUploading(true);
++    await uploadFile(file);
++    setUploading(false);
++  }
++
++  async function handleDownload(f) {
++    const url = await getDownloadUrl(f);
++    if (url) window.open(url, '_blank');
 +  }
 +
 +  return (
-+    <Card title="מופעים">
-+      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-4">
-+        <TextInput value={name} onChange={e => setName(e.target.value)} placeholder="שם המופע" className="flex-1 min-w-[160px]" />
-+        <TextInput type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
-+        <TextInput type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
-+        <TextInput value={notes} onChange={e => setNotes(e.target.value)} placeholder="הערות" className="w-40" />
-+        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-+      </form>
++    <Card title="קבצים">
++      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer mb-4" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
++        <Upload size={15} /> {uploading ? 'מעלה...' : 'העלאת קובץ'}
++        <input type="file" className="hidden" onChange={handleFileChange} disabled={uploading} />
++      </label>
 +      {loading ? (
 +        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-+      ) : occurrences.length === 0 ? (
-+        <p className="text-sm" style={{ color: C.inkSoft }}>אין מופעים עדיין.</p>
++      ) : files.length === 0 ? (
++        <p className="text-sm" style={{ color: C.inkSoft }}>אין קבצים עדיין.</p>
 +      ) : (
 +        <table className="w-full text-sm border-collapse">
-+          <thead>
-+            <tr style={{ background: '#E3E4D6' }}>
-+              {['שם המופע', 'תאריך התחלה', 'תאריך סיום', 'הערות', ''].map(h => (
-+                <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-+              ))}
-+            </tr>
-+          </thead>
 +          <tbody>
-+            {occurrences.map(o => (
-+              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
-+                <td className="px-4 py-2.5">{o.name}</td>
-+                <td className="px-4 py-2.5 text-xs">{formatDate(o.start_date)}</td>
-+                <td className="px-4 py-2.5 text-xs">{formatDate(o.end_date)}</td>
-+                <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{o.notes || '—'}</td>
-+                <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteOccurrence(o.id)} title="מחיקה" /></td>
++            {files.map(f => (
++              <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
++                <td className="px-4 py-2"><button onClick={() => handleDownload(f)} className="hover:underline" style={{ color: C.linkBlue }}>{f.name}</button></td>
++                <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
++                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteFile(f)} title="מחיקה" /></td>
 +              </tr>
 +            ))}
 +          </tbody>
@@ -78,59 +71,97 @@ index 3132cfb..498056a 100644
  /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
  function PricingTiersSection({ mifalId }) {
    const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
-@@ -396,10 +451,14 @@ export default function MifalDetailView({ mifalId }) {
-         <button onClick={() => setTab('budget')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'budget' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-           <Wallet size={14} /> תקציב
+@@ -454,11 +501,15 @@ export default function MifalDetailView({ mifalId }) {
+         <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+           <CalendarDays size={14} /> מופעים
          </button>
-+        <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-+          <CalendarDays size={14} /> מופעים
++        <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
++          <Upload size={14} /> קבצים
 +        </button>
        </div>
  
        {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
        {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
-+      {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
+       {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
++      {tab === 'files' && <FilesTab mifalId={mifal.id} />}
      </div>
    );
  }
-diff --git a/mifalim-app/lib/useOccurrences.js b/mifalim-app/lib/useOccurrences.js
+diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
 new file mode 100644
-index 0000000..7db1d94
+index 0000000..2724a7c
 --- /dev/null
-+++ b/mifalim-app/lib/useOccurrences.js
-@@ -0,0 +1,35 @@
++++ b/mifalim-app/lib/useFiles.js
+@@ -0,0 +1,51 @@
 +'use client';
 +import { useState, useEffect, useCallback } from 'react';
 +import { createClient } from './supabaseClient';
 +
-+export function useOccurrences(mifalId) {
++const BUCKET = 'mifal-files';
++
++// Shared by mifal files and mega-project files — same owner_type/owner_id pattern as useBudget.js.
++export function useFiles(ownerType, ownerId) {
 +  const supabase = createClient();
-+  const [occurrences, setOccurrences] = useState([]);
++  const [files, setFiles] = useState([]);
 +  const [loading, setLoading] = useState(true);
 +
 +  const reload = useCallback(async () => {
-+    if (!mifalId) return;
++    if (!ownerId) return;
 +    setLoading(true);
-+    const { data, error } = await supabase.from('occurrences').select('*').eq('mifal_id', mifalId).order('start_date', { ascending: true, nullsFirst: false });
-+    if (error) console.error('שגיאה בטעינת מופעים:', error);
-+    setOccurrences(data || []);
++    const { data, error } = await supabase.from('files').select('*').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
++    if (error) console.error('שגיאה בטעינת קבצים:', error);
++    setFiles(data || []);
 +    setLoading(false);
-+  }, [mifalId]);
++  }, [ownerType, ownerId]);
 +
 +  useEffect(() => { reload(); }, [reload]);
 +
-+  async function createOccurrence(row) {
-+    const { data, error } = await supabase.from('occurrences').insert({ ...row, mifal_id: mifalId }).select().single();
-+    if (error) { console.error('שגיאה ביצירת מופע:', error); return null; }
-+    setOccurrences(prev => [...prev, data]);
++  async function uploadFile(file) {
++    const { data: { user } } = await supabase.auth.getUser();
++    const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
++    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
++    if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); return null; }
++    const { data, error } = await supabase.from('files').insert({
++      owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, modified_by: user?.id,
++    }).select().single();
++    if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); return null; }
++    setFiles(prev => [data, ...prev]);
 +    return data;
 +  }
 +
-+  async function deleteOccurrence(id) {
-+    const { error } = await supabase.from('occurrences').delete().eq('id', id);
-+    if (error) { console.error('שגיאה במחיקת מופע:', error); return; }
-+    setOccurrences(prev => prev.filter(o => o.id !== id));
++  async function deleteFile(f) {
++    await supabase.storage.from(BUCKET).remove([f.storage_path]);
++    const { error } = await supabase.from('files').delete().eq('id', f.id);
++    if (error) { console.error('שגיאה במחיקת קובץ:', error); return; }
++    setFiles(prev => prev.filter(x => x.id !== f.id));
 +  }
 +
-+  return { occurrences, loading, createOccurrence, deleteOccurrence };
++  async function getDownloadUrl(f) {
++    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(f.storage_path, 60);
++    if (error) { console.error('שגיאה ביצירת קישור הורדה:', error); return null; }
++    return data.signedUrl;
++  }
++
++  return { files, loading, uploadFile, deleteFile, getDownloadUrl };
 +}
+diff --git a/mifalim-app/supabase/schema/02_storage_bucket.sql b/mifalim-app/supabase/schema/02_storage_bucket.sql
+new file mode 100644
+index 0000000..72be443
+--- /dev/null
++++ b/mifalim-app/supabase/schema/02_storage_bucket.sql
+@@ -0,0 +1,15 @@
++-- Creates the storage bucket used by the Files tab, plus policies allowing any
++-- signed-in user to upload/read/delete within it. Run once in SQL Editor.
++
++insert into storage.buckets (id, name, public)
++values ('mifal-files', 'mifal-files', false)
++on conflict (id) do nothing;
++
++create policy "mifal-files: authenticated read" on storage.objects for select
++  using (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
++
++create policy "mifal-files: authenticated upload" on storage.objects for insert
++  with check (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
++
++create policy "mifal-files: authenticated delete" on storage.objects for delete
++  using (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
