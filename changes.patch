@@ -1,0 +1,608 @@
+diff --git a/mifalim-app/app/mega/page.js b/mifalim-app/app/mega/page.js
+new file mode 100644
+index 0000000..c44057e
+--- /dev/null
++++ b/mifalim-app/app/mega/page.js
+@@ -0,0 +1,22 @@
++import { redirect } from 'next/navigation';
++import { createClient } from '../../lib/supabaseServer';
++import TopNav from '../../components/TopNav';
++import MegaProjectsPage from '../../components/MegaProjectsPage';
++
++export default async function MegaRoute() {
++  const supabase = createClient();
++  const { data: { user } } = await supabase.auth.getUser();
++
++  if (!user) redirect('/login');
++
++  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
++
++  return (
++    <div>
++      <TopNav userEmail={user.email} role={profile?.role || '...'} />
++      <main className="max-w-7xl mx-auto p-8">
++        <MegaProjectsPage />
++      </main>
++    </div>
++  );
++}
+diff --git a/mifalim-app/app/page.js b/mifalim-app/app/page.js
+index 0a7003e..38faff8 100644
+--- a/mifalim-app/app/page.js
++++ b/mifalim-app/app/page.js
+@@ -1,8 +1,7 @@
+ import { redirect } from 'next/navigation';
+ import { createClient } from '../lib/supabaseServer';
+-import SignOutButton from '../components/SignOutButton';
++import TopNav from '../components/TopNav';
+ import MifalimList from '../components/MifalimList';
+-import { C } from '../lib/designSystem';
+ 
+ export default async function HomePage() {
+   const supabase = createClient();
+@@ -14,16 +13,8 @@ export default async function HomePage() {
+ 
+   return (
+     <div>
+-      <div className="sticky top-0 z-30 w-full" style={{ background: C.forest }}>
+-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between flex-wrap gap-3">
+-          <span className="text-white font-bold text-base" style={{ fontFamily: 'Rubik, sans-serif' }}>נוער השומר — ניהול מפעלים</span>
+-          <div className="flex items-center gap-3">
+-            <span className="text-xs" style={{ color: '#E4E7DC' }}>{user.email} · {profile?.role || '...'}</span>
+-            <SignOutButton />
+-          </div>
+-        </div>
+-      </div>
+-      <main className="max-w-5xl mx-auto p-8">
++      <TopNav userEmail={user.email} role={profile?.role || '...'} />
++      <main className="max-w-7xl mx-auto p-8">
+         <MifalimList />
+       </main>
+     </div>
+diff --git a/mifalim-app/app/tasks/page.js b/mifalim-app/app/tasks/page.js
+new file mode 100644
+index 0000000..4fbe953
+--- /dev/null
++++ b/mifalim-app/app/tasks/page.js
+@@ -0,0 +1,22 @@
++import { redirect } from 'next/navigation';
++import { createClient } from '../../lib/supabaseServer';
++import TopNav from '../../components/TopNav';
++import TasksPage from '../../components/TasksPage';
++
++export default async function TasksRoute() {
++  const supabase = createClient();
++  const { data: { user } } = await supabase.auth.getUser();
++
++  if (!user) redirect('/login');
++
++  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
++
++  return (
++    <div>
++      <TopNav userEmail={user.email} role={profile?.role || '...'} />
++      <main className="max-w-7xl mx-auto p-8">
++        <TasksPage />
++      </main>
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/MegaProjectsPage.js b/mifalim-app/components/MegaProjectsPage.js
+new file mode 100644
+index 0000000..97840b4
+--- /dev/null
++++ b/mifalim-app/components/MegaProjectsPage.js
+@@ -0,0 +1,76 @@
++'use client';
++import { useState } from 'react';
++import { Plus, Trash2, Layers } from 'lucide-react';
++import { useMegaProjects } from '../lib/useMegaProjects';
++import { C } from '../lib/designSystem';
++import { Field, TextInput, IconButton, Card, Modal } from './ui';
++
++function CreateMegaModal({ open, onClose, onCreate }) {
++  const [name, setName] = useState('');
++  const [saving, setSaving] = useState(false);
++
++  async function handleSave() {
++    if (!name.trim()) return;
++    setSaving(true);
++    await onCreate({ name: name.trim() });
++    setSaving(false);
++    setName('');
++    onClose();
++  }
++
++  return (
++    <Modal
++      open={open}
++      onClose={onClose}
++      title="יצירת פרויקט על"
++      footer={
++        <>
++          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
++          <button disabled={saving || !name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !name.trim() ? 0.6 : 1 }}>
++            {saving ? 'שומר...' : 'יצירה'}
++          </button>
++        </>
++      }
++    >
++      <Field label="שם פרויקט העל">
++        <TextInput value={name} onChange={e => setName(e.target.value)} placeholder='לדוגמה: פרויקט על - קיץ תשפ"ז' />
++      </Field>
++    </Modal>
++  );
++}
++
++export default function MegaProjectsPage() {
++  const { megaProjects, loading, createMegaProject, deleteMegaProject } = useMegaProjects();
++  const [createOpen, setCreateOpen] = useState(false);
++
++  return (
++    <div>
++      <div className="flex items-center justify-between mb-4">
++        <h1 className="text-2xl font-bold" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>פרויקטי על</h1>
++        <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white" style={{ background: C.forest }}>
++          <Plus size={16} /> יצירת פרויקט על
++        </button>
++      </div>
++
++      <CreateMegaModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={createMegaProject} />
++
++      {loading ? (
++        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
++      ) : megaProjects.length === 0 ? (
++        <div className="text-center py-20 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>
++          <Layers size={28} className="mx-auto mb-3" style={{ color: C.sage }} />
++          אין עדיין פרויקטי על
++        </div>
++      ) : (
++        <div className="flex flex-col gap-2">
++          {megaProjects.map(mp => (
++            <div key={mp.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
++              <span className="font-semibold" style={{ color: C.forestDark }}>{mp.name}</span>
++              <IconButton icon={Trash2} tone="danger" onClick={() => { if (confirm(`למחוק את "${mp.name}"?`)) deleteMegaProject(mp.id); }} title="מחיקה" />
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
+index 1123cb3..aa9381a 100644
+--- a/mifalim-app/components/MifalimList.js
++++ b/mifalim-app/components/MifalimList.js
+@@ -1,8 +1,8 @@
+ 'use client';
+-import { useState } from 'react';
+-import { Plus, Trash2, Compass, Tent, Users, Wrench } from 'lucide-react';
++import { useState, useEffect } from 'react';
++import { Plus, Trash2, Pencil, Compass, Tent, Users, Wrench } from 'lucide-react';
+ import { useMifalim } from '../lib/useMifalim';
+-import { C, NUMFONT, STATUS_OPTIONS, STATUS_TONE } from '../lib/designSystem';
++import { C, STATUS_OPTIONS, STATUS_TONE } from '../lib/designSystem';
+ import { Field, TextInput, Select, Badge, IconButton, Card, Modal } from './ui';
+ 
+ const ALL_TYPES = {
+@@ -16,18 +16,22 @@ function emptyDraft() {
+   return { name: '', type: 'day_trip', lead_role: '', status: 'מתוכנן' };
+ }
+ 
+-function CreateMifalModal({ open, onClose, onCreate }) {
++function MifalModal({ open, onClose, existing, onSave }) {
+   const [draft, setDraft] = useState(emptyDraft());
+   const [saving, setSaving] = useState(false);
++  const isEdit = !!existing;
++
++  useEffect(() => {
++    if (open) setDraft(existing ? { name: existing.name || '', type: existing.type, lead_role: existing.lead_role || '', status: existing.status } : emptyDraft());
++  }, [open, existing]);
+ 
+   function set(patch) { setDraft(d => ({ ...d, ...patch })); }
+ 
+   async function handleSave() {
+     if (!draft.name.trim()) return;
+     setSaving(true);
+-    await onCreate(draft);
++    await onSave(draft);
+     setSaving(false);
+-    setDraft(emptyDraft());
+     onClose();
+   }
+ 
+@@ -35,12 +39,12 @@ function CreateMifalModal({ open, onClose, onCreate }) {
+     <Modal
+       open={open}
+       onClose={onClose}
+-      title="יצירת מפעל חדש"
++      title={isEdit ? 'עריכת מפעל' : 'יצירת מפעל חדש'}
+       footer={
+         <>
+           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
+           <button disabled={saving || !draft.name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.name.trim() ? 0.6 : 1 }}>
+-            {saving ? 'שומר...' : 'יצירה'}
++            {saving ? 'שומר...' : isEdit ? 'שמירה' : 'יצירה'}
+           </button>
+         </>
+       }
+@@ -68,12 +72,17 @@ function CreateMifalModal({ open, onClose, onCreate }) {
+ }
+ 
+ export default function MifalimList() {
+-  const { mifalim, loading, createMifal, deleteMifal } = useMifalim();
++  const { mifalim, loading, createMifal, updateMifal, deleteMifal } = useMifalim();
+   const [createOpen, setCreateOpen] = useState(false);
++  const [editId, setEditId] = useState(null);
++  const editingMifal = mifalim.find(m => m.id === editId);
+ 
+   return (
+     <div>
+-      <CreateMifalModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={createMifal} />
++      <h1 className="text-2xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>כל המפעלים</h1>
++
++      <MifalModal open={createOpen} onClose={() => setCreateOpen(false)} existing={null} onSave={createMifal} />
++      <MifalModal open={!!editId} onClose={() => setEditId(null)} existing={editingMifal} onSave={draft => updateMifal(editId, draft)} />
+ 
+       <div className="flex items-center justify-between mb-2">
+         <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest }}>
+@@ -81,7 +90,7 @@ export default function MifalimList() {
+         </button>
+       </div>
+ 
+-      <Card title="כל המפעלים (נתונים אמיתיים מ-Supabase)">
++      <Card>
+         {loading ? (
+           <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+         ) : mifalim.length === 0 ? (
+@@ -94,6 +103,7 @@ export default function MifalimList() {
+             <table className="w-full text-sm border-collapse">
+               <thead>
+                 <tr style={{ background: C.forest }}>
++                  <th className="w-10"></th>
+                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">שם המפעל</th>
+                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">סוג</th>
+                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">אחראי</th>
+@@ -107,6 +117,7 @@ export default function MifalimList() {
+                   const Icon = def.icon || Tent;
+                   return (
+                     <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
++                      <td className="px-2 py-3 text-center"><IconButton icon={Pencil} title="עריכה" onClick={() => setEditId(m.id)} /></td>
+                       <td className="px-4 py-3 font-semibold" style={{ color: C.forestDark }}>{m.name || 'מפעל ללא שם'}</td>
+                       <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}><Icon size={13} />{def.label || m.type}</span></td>
+                       <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>
+diff --git a/mifalim-app/components/TasksPage.js b/mifalim-app/components/TasksPage.js
+new file mode 100644
+index 0000000..dfbaef9
+--- /dev/null
++++ b/mifalim-app/components/TasksPage.js
+@@ -0,0 +1,169 @@
++'use client';
++import { useState } from 'react';
++import { Plus, Trash2, Pencil } from 'lucide-react';
++import { useTasks } from '../lib/useTasks';
++import { useMifalim } from '../lib/useMifalim';
++import { C } from '../lib/designSystem';
++import { Field, TextInput, Select, IconButton, Card, Modal } from './ui';
++
++function formatDate(iso) {
++  if (!iso) return '';
++  const [y, m, d] = iso.split('-');
++  return `${d}/${m}/${y}`;
++}
++
++function daysUntil(dateStr) {
++  if (!dateStr) return null;
++  const today = new Date(); today.setHours(0, 0, 0, 0);
++  return Math.round((new Date(dateStr) - today) / 86400000);
++}
++
++function taskUrgency(t) {
++  if (t.is_completed) return 'done';
++  const d = daysUntil(t.deadline);
++  if (d === null) return 'normal';
++  if (d < 0) return 'overdue';
++  if (d <= 2) return 'soon';
++  return 'normal';
++}
++
++const URGENCY_STYLE = {
++  overdue: { bg: C.rustSoft, border: C.rust },
++  soon: { bg: C.amberSoft, border: C.amber },
++  done: { bg: C.greenGoodSoft, border: C.greenGood },
++  normal: { bg: C.surface, border: C.line },
++};
++
++function emptyDraft(mifalim) {
++  return { mifal_id: mifalim[0]?.id || '', task_name: '', assigned_to: '', deadline: '' };
++}
++
++function CreateTaskModal({ open, onClose, mifalim, onCreate }) {
++  const [draft, setDraft] = useState(emptyDraft(mifalim));
++  const [saving, setSaving] = useState(false);
++
++  function set(patch) { setDraft(d => ({ ...d, ...patch })); }
++
++  async function handleSave() {
++    if (!draft.task_name.trim() || !draft.mifal_id) return;
++    setSaving(true);
++    await onCreate({ ...draft, is_completed: false });
++    setSaving(false);
++    setDraft(emptyDraft(mifalim));
++    onClose();
++  }
++
++  return (
++    <Modal
++      open={open}
++      onClose={onClose}
++      title="יצירת משימה חדשה"
++      footer={
++        <>
++          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
++          <button disabled={saving || !draft.task_name.trim() || !draft.mifal_id} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.task_name.trim() ? 0.6 : 1 }}>
++            {saving ? 'שומר...' : 'יצירה'}
++          </button>
++        </>
++      }
++    >
++      <div className="flex flex-col gap-4">
++        <Field label="שיוך למפעל">
++          <Select value={draft.mifal_id} onChange={e => set({ mifal_id: e.target.value })}>
++            {mifalim.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
++          </Select>
++        </Field>
++        <Field label="שם המשימה">
++          <TextInput value={draft.task_name} onChange={e => set({ task_name: e.target.value })} />
++        </Field>
++        <Field label="אחראי">
++          <TextInput value={draft.assigned_to} onChange={e => set({ assigned_to: e.target.value })} />
++        </Field>
++        <Field label="תאריך יעד">
++          <TextInput type="date" value={draft.deadline} onChange={e => set({ deadline: e.target.value })} />
++        </Field>
++      </div>
++    </Modal>
++  );
++}
++
++export default function TasksPage() {
++  const { tasks, loading, createTask, updateTask, deleteTask } = useTasks();
++  const { mifalim, loading: mifalimLoading } = useMifalim();
++  const [createOpen, setCreateOpen] = useState(false);
++  const [showAll, setShowAll] = useState(false);
++
++  const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
++  const openCount = tasks.filter(t => !t.is_completed).length;
++  const overdueCount = tasks.filter(t => taskUrgency(t) === 'overdue').length;
++
++  return (
++    <div>
++      <h1 className="text-2xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>משימות מכלל המפעלים</h1>
++
++      {!mifalimLoading && <CreateTaskModal open={createOpen} onClose={() => setCreateOpen(false)} mifalim={mifalim} onCreate={createTask} />}
++
++      <div className="grid grid-cols-2 gap-4 mb-4">
++        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
++          <div className="text-lg font-bold" style={{ color: C.forestDark }}>{openCount}</div>
++          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות פתוחות</div>
++        </div>
++        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
++          <div className="text-lg font-bold" style={{ color: C.rust }}>{overdueCount}</div>
++          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות בחריגה</div>
++        </div>
++      </div>
++
++      <div className="flex items-center justify-between mb-2">
++        <button onClick={() => setCreateOpen(true)} disabled={mifalim.length === 0} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest, opacity: mifalim.length === 0 ? 0.6 : 1 }}>
++          <Plus size={16} /> יצירת משימה חדשה
++        </button>
++        <button onClick={() => setShowAll(s => !s)} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
++          {showAll ? 'הצג משימות פתוחות בלבד' : 'הצג את כל המשימות'}
++        </button>
++      </div>
++      {mifalim.length === 0 && <p className="text-xs mb-2" style={{ color: C.inkSoft }}>צריך קודם ליצור מפעל אחד לפחות ב"כל המפעלים" כדי לשייך אליו משימות.</p>}
++
++      <Card>
++        {loading ? (
++          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
++        ) : visible.length === 0 ? (
++          <div className="text-center py-16 rounded-xl" style={{ background: C.paper, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין משימות להצגה</div>
++        ) : (
++          <table className="w-full text-sm border-collapse">
++            <thead>
++              <tr style={{ background: '#E3E4D6' }}>
++                {['משימה', 'מפעל', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map(h => (
++                  <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
++                ))}
++              </tr>
++            </thead>
++            <tbody>
++              {visible.map(t => {
++                const u = URGENCY_STYLE[taskUrgency(t)];
++                return (
++                  <tr key={t.id} style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
++                    <td className="px-4 py-2.5" style={{ color: C.ink }}>{t.task_name}</td>
++                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.mifalim?.name || '—'}</td>
++                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
++                    <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
++                    <td className="px-4 py-2.5">
++                      <button
++                        onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
++                        className="px-2.5 py-1 rounded-full text-xs font-semibold"
++                        style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
++                      >
++                        {t.is_completed ? 'הושלם' : 'פתוח'}
++                      </button>
++                    </td>
++                    <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
++                  </tr>
++                );
++              })}
++            </tbody>
++          </table>
++        )}
++      </Card>
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/TopNav.js b/mifalim-app/components/TopNav.js
+new file mode 100644
+index 0000000..f94aae1
+--- /dev/null
++++ b/mifalim-app/components/TopNav.js
+@@ -0,0 +1,64 @@
++'use client';
++import Link from 'next/link';
++import { usePathname } from 'next/navigation';
++import { TableIcon, ListChecks, Layers, Lock } from 'lucide-react';
++import { C } from '../lib/designSystem';
++import SignOutButton from './SignOutButton';
++
++// Full nav list matches the original design. Only entries with an `href` are wired to a real
++// page so far — the rest are shown as disabled/coming-soon rather than pretending they exist.
++const NAV_ITEMS = [
++  { key: 'all', label: 'כל המפעלים', icon: TableIcon, href: '/' },
++  { key: 'tasks', label: 'משימות מכלל המפעלים', icon: ListChecks, href: '/tasks' },
++  { key: 'calendar', label: 'לוח שנה', href: null },
++  { key: 'financials', label: 'סיכום יתרות שנתי', href: null },
++  { key: 'mega', label: 'פרויקטי על', icon: Layers, href: '/mega' },
++];
++
++export default function TopNav({ userEmail, role }) {
++  const pathname = usePathname();
++
++  return (
++    <div className="sticky top-0 z-30 w-full" style={{ background: C.forest }}>
++      <div className="max-w-7xl mx-auto px-6 flex items-center gap-6 flex-wrap py-3">
++        <span className="text-white font-bold text-base shrink-0" style={{ fontFamily: 'Rubik, sans-serif' }}>נוער השומר</span>
++        <nav className="flex items-center gap-1 flex-wrap flex-1">
++          {NAV_ITEMS.map(item => {
++            const Icon = item.icon;
++            const active = item.href && pathname === item.href;
++            if (!item.href) {
++              return (
++                <button
++                  key={item.key}
++                  disabled
++                  title="בקרוב"
++                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
++                  style={{ background: 'transparent', color: '#7C8570', cursor: 'default' }}
++                >
++                  {item.label}
++                  <Lock size={11} />
++                </button>
++              );
++            }
++            return (
++              <Link
++                key={item.key}
++                href={item.href}
++                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
++                style={active ? { background: C.ochre, color: '#2A1F08' } : { background: 'transparent', color: '#E4E7DC' }}
++              >
++                {Icon && <Icon size={14} />}
++                {item.label}
++              </Link>
++            );
++          })}
++        </nav>
++        <div className="flex items-center gap-2 shrink-0">
++          <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: C.forestDark, color: '#C9D0BE' }}>{role}</span>
++          <span className="text-xs" style={{ color: '#E4E7DC' }}>{userEmail}</span>
++          <SignOutButton />
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/mifalim-app/lib/useMegaProjects.js b/mifalim-app/lib/useMegaProjects.js
+new file mode 100644
+index 0000000..8b7b161
+--- /dev/null
++++ b/mifalim-app/lib/useMegaProjects.js
+@@ -0,0 +1,35 @@
++'use client';
++import { useState, useEffect, useCallback } from 'react';
++import { createClient } from './supabaseClient';
++
++export function useMegaProjects() {
++  const supabase = createClient();
++  const [megaProjects, setMegaProjects] = useState([]);
++  const [loading, setLoading] = useState(true);
++
++  const reload = useCallback(async () => {
++    setLoading(true);
++    const { data, error } = await supabase.from('mega_projects').select('*').order('created_at', { ascending: false });
++    if (error) console.error('שגיאה בטעינת פרויקטי על:', error);
++    setMegaProjects(data || []);
++    setLoading(false);
++  }, []);
++
++  useEffect(() => { reload(); }, [reload]);
++
++  async function createMegaProject(mp) {
++    const { data, error } = await supabase.from('mega_projects').insert(mp).select().single();
++    if (error) { console.error('שגיאה ביצירת פרויקט על:', error); return null; }
++    setMegaProjects(prev => [data, ...prev]);
++    return data;
++  }
++
++  async function deleteMegaProject(id) {
++    const { error } = await supabase.from('mega_projects').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת פרויקט על:', error); return false; }
++    setMegaProjects(prev => prev.filter(mp => mp.id !== id));
++    return true;
++  }
++
++  return { megaProjects, loading, reload, createMegaProject, deleteMegaProject };
++}
+diff --git a/mifalim-app/lib/useTasks.js b/mifalim-app/lib/useTasks.js
+new file mode 100644
+index 0000000..f540b8a
+--- /dev/null
++++ b/mifalim-app/lib/useTasks.js
+@@ -0,0 +1,43 @@
++'use client';
++import { useState, useEffect, useCallback } from 'react';
++import { createClient } from './supabaseClient';
++
++// Same pattern as useMifalim.js — one hook, real Supabase CRUD, joined to the parent mifal's name.
++export function useTasks() {
++  const supabase = createClient();
++  const [tasks, setTasks] = useState([]);
++  const [loading, setLoading] = useState(true);
++
++  const reload = useCallback(async () => {
++    setLoading(true);
++    const { data, error } = await supabase.from('tasks').select('*, mifalim(name)').order('deadline', { ascending: true, nullsFirst: false });
++    if (error) console.error('שגיאה בטעינת משימות:', error);
++    setTasks(data || []);
++    setLoading(false);
++  }, []);
++
++  useEffect(() => { reload(); }, [reload]);
++
++  async function createTask(task) {
++    const { data, error } = await supabase.from('tasks').insert(task).select('*, mifalim(name)').single();
++    if (error) { console.error('שגיאה ביצירת משימה:', error); return null; }
++    setTasks(prev => [data, ...prev]);
++    return data;
++  }
++
++  async function updateTask(id, patch) {
++    const { data, error } = await supabase.from('tasks').update(patch).eq('id', id).select('*, mifalim(name)').single();
++    if (error) { console.error('שגיאה בעדכון משימה:', error); return null; }
++    setTasks(prev => prev.map(t => (t.id === id ? data : t)));
++    return data;
++  }
++
++  async function deleteTask(id) {
++    const { error } = await supabase.from('tasks').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת משימה:', error); return false; }
++    setTasks(prev => prev.filter(t => t.id !== id));
++    return true;
++  }
++
++  return { tasks, loading, reload, createTask, updateTask, deleteTask };
++}
