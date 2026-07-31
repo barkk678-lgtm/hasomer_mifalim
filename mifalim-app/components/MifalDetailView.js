@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
 import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
+import BusLogisticsTab from './BusLogisticsTab';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
@@ -664,6 +665,9 @@ export default function MifalDetailView({ mifalId }) {
             <CalendarDays size={14} /> מופעים
           </button>
         )}
+        <button onClick={() => setTab('buses')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'buses' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+          <Bus size={14} /> סידור אוטובוסים
+        </button>
         <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
           <Upload size={14} /> קבצים
         </button>
@@ -672,6 +676,7 @@ export default function MifalDetailView({ mifalId }) {
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
       {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
+      {tab === 'buses' && <BusLogisticsTab mifalId={mifal.id} />}
       {tab === 'files' && <FilesTab mifalId={mifal.id} />}
     </div>
   );

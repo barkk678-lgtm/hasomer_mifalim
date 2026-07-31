@@ -1,194 +1,296 @@
+diff --git a/mifalim-app/components/BusLogisticsTab.js b/mifalim-app/components/BusLogisticsTab.js
+new file mode 100644
+index 0000000..e592571
+--- /dev/null
++++ b/mifalim-app/components/BusLogisticsTab.js
+@@ -0,0 +1,130 @@
++'use client';
++import { useState } from 'react';
++import { Plus, Trash2, Bus } from 'lucide-react';
++import { useBusPlans } from '../lib/useBusPlans';
++import { useBusPlanDetail } from '../lib/useBusPlanDetail';
++import { C } from '../lib/designSystem';
++import { Card, IconButton, TextInput, Field, InlineGrid } from './ui';
++
++// Groups needing pickup + bus types available — the structured input data an external
++// allocation tool reads to compute the actual seating plan. The board itself (which group sits
++// on which bus) is out of scope here on purpose: it's computed/maintained by that external tool,
++// not edited by hand in this UI.
++const GROUP_COLUMNS = [
++  { key: 'pickup_point', label: "נק' איסוף", type: 'text' },
++  { key: 'group_name', label: 'שם הקבוצה', type: 'text' },
++  { key: 'quantity', label: 'כמות', type: 'number' },
++];
++function emptyGroupDraft() { return { pickup_point: '', group_name: '', quantity: '' }; }
++
++const BUS_TYPE_COLUMNS = [
++  { key: 'label', label: 'שם סוג האוטובוס', type: 'text' },
++  { key: 'capacity', label: 'קיבולת', type: 'number' },
++];
++function emptyBusTypeDraft() { return { label: '', capacity: '' }; }
++
++function BusPlanDetail({ plan, onUpdatePlan }) {
++  const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup } = useBusPlanDetail(plan.id);
++  const [destination, setDestination] = useState(plan.destination || '');
++
++  const totalPeople = groups.reduce((s, g) => s + (Number(g.quantity) || 0), 0);
++  const totalCapacity = busTypes.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
++  const hasBoard = board && board.board && Object.keys(board.board).length > 0;
++
++  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
++
++  return (
++    <div>
++      <Card title="קבוצות">
++        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>הזנה ידנית ישירות בטבלה — כל שורה היא קבוצה שצריך לשבץ לאוטובוס.</p>
++        <InlineGrid columns={GROUP_COLUMNS} rows={groups} makeEmptyDraft={emptyGroupDraft} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
++        {groups.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} {groups.length} קבוצות, {totalPeople} איש.</p>}
++      </Card>
++
++      <Card title="סוגי אוטובוסים זמינים">
++        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>ניתן להגדיר כמה סוגים בקיבולות שונות.</p>
++        <InlineGrid columns={BUS_TYPE_COLUMNS} rows={busTypes} makeEmptyDraft={emptyBusTypeDraft} onCreate={createBusType} onUpdate={updateBusType} onDelete={deleteBusType} />
++        {busTypes.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} קיבולת: {totalCapacity} מקומות.</p>}
++      </Card>
++
++      <Card title="יעד סופי">
++        <Field label="יעד סופי">
++          <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
++        </Field>
++      </Card>
++
++      <Card title="סידור בפועל">
++        {hasBoard ? (
++          <p className="text-sm" style={{ color: C.forestDark }}>
++            קיים סידור פעיל לתוכנית זו{board.updated_at ? ` (עודכן לאחרונה ${new Date(board.updated_at).toLocaleString('he-IL')})` : ''}.
++          </p>
++        ) : (
++          <p className="text-sm" style={{ color: C.inkSoft }}>טרם חושב סידור אוטובוסים לתוכנית זו.</p>
++        )}
++      </Card>
++    </div>
++  );
++}
++
++export default function BusLogisticsTab({ mifalId }) {
++  const { plans, loading, createPlan, updatePlan, deletePlan } = useBusPlans(mifalId);
++  const [activeId, setActiveId] = useState(null);
++  const [renamingId, setRenamingId] = useState(null);
++  const [renameText, setRenameText] = useState('');
++
++  const activePlan = plans.find(p => p.id === activeId) || plans[0] || null;
++
++  async function addPlan() {
++    const p = await createPlan(`תוכנית הסעה ${plans.length + 1}`);
++    if (p) setActiveId(p.id);
++  }
++  function startRename(p) { setRenamingId(p.id); setRenameText(p.name); }
++  function confirmRename() {
++    if (renameText.trim()) updatePlan(renamingId, { name: renameText.trim() });
++    setRenamingId(null);
++  }
++  function handleDeletePlan(id) {
++    deletePlan(id);
++    if (activePlan?.id === id) setActiveId(null);
++  }
++
++  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
++
++  return (
++    <div>
++      <div className="flex items-center gap-2 mb-2 flex-wrap">
++        {plans.map(p => (
++          <div key={p.id} className="flex items-center gap-1">
++            {renamingId === p.id ? (
++              <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onBlur={confirmRename} onKeyDown={e => e.key === 'Enter' && confirmRename()} className="text-xs px-2 py-1.5 rounded-lg" style={{ border: `1px solid ${C.line}` }} />
++            ) : (
++              <button
++                onClick={() => setActiveId(p.id)}
++                onDoubleClick={() => startRename(p)}
++                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
++                style={activePlan?.id === p.id ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft, border: `1px solid ${C.line}` }}
++                title="לחיצה כפולה לשינוי שם התוכנית"
++              >
++                {p.name}
++              </button>
++            )}
++            {activePlan?.id === p.id && <IconButton icon={Trash2} tone="danger" size={13} onClick={() => handleDeletePlan(p.id)} title="מחיקת תוכנית" />}
++          </div>
++        ))}
++        <button onClick={addPlan} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.linkBlue, color: '#fff' }}>
++          <Plus size={13} /> תוכנית הסעה חדשה
++        </button>
++      </div>
++      <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>לחיצה כפולה על שם תוכנית משנה אותו (לדוגמה: {'"'}הסעה הלוך – יום א{"'"}{'"'}). לכל תוכנית יעד, סוגי אוטובוסים וקבוצות משלה.</p>
++
++      {!activePlan ? (
++        <div className="text-center py-16 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>
++          <Bus size={28} className="mx-auto mb-3" style={{ color: C.sage }} />
++          אין עדיין תוכנית הסעה. לחצו על {'"'}תוכנית הסעה חדשה{'"'} כדי להתחיל.
++        </div>
++      ) : (
++        <BusPlanDetail key={activePlan.id} plan={activePlan} onUpdatePlan={updatePlan} />
++      )}
++    </div>
++  );
++}
 diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index 99e9d73..27207dc 100644
+index 27207dc..ae75413 100644
 --- a/mifalim-app/components/MifalDetailView.js
 +++ b/mifalim-app/components/MifalDetailView.js
-@@ -336,53 +336,64 @@ const FILES_PAGE_SIZE = 5;
- function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categories, dragActive, onDragOver, onDragLeave, onDrop, page, setPage }) {
-   const pageRows = rows.slice(page * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE + FILES_PAGE_SIZE);
-   return (
--    <div onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
-+    // The drag handlers + highlight live on this OUTER wrapper (the full card), not some inner
-+    // element sized to its content — otherwise the highlighted "drop here" area shrinks down to
-+    // whatever's inside (e.g. just the empty-state sentence) while the real, whole-card drop
-+    // target underneath looks unmarked. dragleave also has to check relatedTarget: without that,
-+    // it fires (and clears the highlight) every time the pointer crosses onto a child element
-+    // inside the card, not just when it actually leaves the card — making the zone flicker/feel
-+    // broken while dragging over it.
-+    <div
-+      onDragOver={onDragOver}
-+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) onDragLeave(); }}
-+      onDrop={onDrop}
-+      className="rounded-xl transition-colors"
-+      style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2, background: dragActive ? C.ochreSoft : 'transparent' }}
-+    >
-       <Card title={`${title} (${rows.length})`}>
--        <div className="rounded-lg" style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2 }}>
--          {rows.length === 0 ? (
--            <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
--          ) : (
--            <>
--              <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
--                <table className="w-full text-sm border-collapse">
--                  <thead>
--                    <tr style={{ background: '#E3E4D6' }}>
--                      {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
--                        <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
--                      ))}
--                    </tr>
--                  </thead>
--                  <tbody>
--                    {pageRows.map((f, i) => (
--                      <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
--                        <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
--                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
--                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
--                        <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
--                        {categories.length > 1 && (
--                          <td className="px-3 py-2">
--                            <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
--                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
--                            </select>
--                          </td>
--                        )}
--                        <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
--                        <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
--                      </tr>
-+        {rows.length === 0 ? (
-+          <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
-+        ) : (
-+          <>
-+            <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+              <table className="w-full text-sm border-collapse">
-+                <thead>
-+                  <tr style={{ background: '#E3E4D6' }}>
-+                    {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
-+                      <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-                     ))}
--                  </tbody>
--                </table>
-+                  </tr>
-+                </thead>
-+                <tbody>
-+                  {pageRows.map((f, i) => (
-+                    <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-+                      <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
-+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
-+                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
-+                      {categories.length > 1 && (
-+                        <td className="px-3 py-2">
-+                          <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
-+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-+                          </select>
-+                        </td>
-+                      )}
-+                      <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
-+                      <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
-+                    </tr>
-+                  ))}
-+                </tbody>
-+              </table>
-+            </div>
-+            {rows.length > FILES_PAGE_SIZE && (
-+              <div className="flex items-center justify-center gap-3 mt-2 text-xs">
-+                <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
-+                <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
-+                <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
-               </div>
--              {rows.length > FILES_PAGE_SIZE && (
--                <div className="flex items-center justify-center gap-3 mt-2 text-xs">
--                  <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
--                  <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
--                  <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
--                </div>
--              )}
--            </>
--          )}
--        </div>
-+            )}
-+          </>
-+        )}
-       </Card>
+@@ -1,8 +1,9 @@
+ 'use client';
+ import { useState, useEffect } from 'react';
+ import Link from 'next/link';
+-import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download } from 'lucide-react';
++import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
+ import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
++import BusLogisticsTab from './BusLogisticsTab';
+ import { useMifal } from '../lib/useMifal';
+ import { useMifalTasks } from '../lib/useMifalTasks';
+ import { useBudget } from '../lib/useBudget';
+@@ -664,6 +665,9 @@ export default function MifalDetailView({ mifalId }) {
+             <CalendarDays size={14} /> מופעים
+           </button>
+         )}
++        <button onClick={() => setTab('buses')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'buses' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
++          <Bus size={14} /> סידור אוטובוסים
++        </button>
+         <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+           <Upload size={14} /> קבצים
+         </button>
+@@ -672,6 +676,7 @@ export default function MifalDetailView({ mifalId }) {
+       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
+       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
+       {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
++      {tab === 'buses' && <BusLogisticsTab mifalId={mifal.id} />}
+       {tab === 'files' && <FilesTab mifalId={mifal.id} />}
      </div>
    );
-diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
-index b92ef9b..c53d409 100644
---- a/mifalim-app/components/MifalimList.js
-+++ b/mifalim-app/components/MifalimList.js
-@@ -1,5 +1,5 @@
- 'use client';
--import { useState, useMemo } from 'react';
-+import { useState, useMemo, useEffect } from 'react';
- import Link from 'next/link';
- import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
- import { useMifalim } from '../lib/useMifalim';
-@@ -87,6 +87,19 @@ export function MifalModal({ open, onClose, existing, onSave }) {
-   const [draft, setDraft] = useState(existing || null);
-   const [saving, setSaving] = useState(false);
- 
-+  // `existing` only reflects the row the user clicked "edit" on for as long as this component
-+  // instance stays mounted with the same open/existing props — since useState's initializer only
-+  // runs once (on first mount), it can capture 'type'/null from before any row was picked. Without
-+  // resyncing on every open, the very first edit shows the "create" type-picker (whose type buttons
-+  // reset `draft` to a blank new-mifal shape) instead of the real edit form, and saving that blank
-+  // draft silently overwrites the mifal's actual data.
-+  useEffect(() => {
-+    if (open) {
-+      setStep(existing ? 'form' : 'type');
-+      setDraft(existing || null);
-+    }
-+  }, [open, existing]);
+diff --git a/mifalim-app/lib/useBusPlanDetail.js b/mifalim-app/lib/useBusPlanDetail.js
+new file mode 100644
+index 0000000..237ecc3
+--- /dev/null
++++ b/mifalim-app/lib/useBusPlanDetail.js
+@@ -0,0 +1,71 @@
++'use client';
++import { useState, useEffect, useCallback } from 'react';
++import { createClient } from './supabaseClient';
 +
-   function openWithType(type) { setDraft(createEmptyDraft(type)); setStep('form'); }
- 
-   async function handleSave() {
-@@ -98,8 +111,6 @@ export function MifalModal({ open, onClose, existing, onSave }) {
-   }
- 
-   function handleClose() {
--    setStep(existing ? 'form' : 'type');
--    setDraft(existing || null);
-     onClose();
-   }
- 
-diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
-index dbe5f12..5cbed05 100644
---- a/mifalim-app/lib/useFiles.js
-+++ b/mifalim-app/lib/useFiles.js
-@@ -22,17 +22,26 @@ export function useFiles(ownerType, ownerId) {
-   useEffect(() => { reload(); }, [reload]);
- 
-   async function uploadFiles(fileList, category) {
--    const { data: { user } } = await supabase.auth.getUser();
-+    const files = Array.from(fileList || []);
-+    if (!files.length) return [];
-     const uploaded = [];
--    for (const file of Array.from(fileList)) {
--      const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
--      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
--      if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
--      const { data, error } = await supabase.from('files').insert({
--        owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
--      }).select('*, profiles(full_name)').single();
--      if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
--      uploaded.push(data);
-+    try {
-+      const { data: { user } } = await supabase.auth.getUser();
-+      for (const file of files) {
-+        // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
-+        // backends — sanitize the filename portion so uploads with those characters don't fail.
-+        const safeName = file.name.replace(/[#?%]/g, '_');
-+        const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
-+        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-+        if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
-+        const { data, error } = await supabase.from('files').insert({
-+          owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
-+        }).select('*, profiles(full_name)').single();
-+        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
-+        uploaded.push(data);
-+      }
-+    } catch (err) {
-+      console.error('שגיאה בלתי צפויה בהעלאת קבצים:', err);
-     }
-     if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
-     return uploaded;
++// One bus plan's bus types + groups (the real, editable source data) plus the computed
++// allocation board — the board itself is written elsewhere (an external allocation tool), this
++// only reads it so the UI can show whether one exists yet.
++export function useBusPlanDetail(planId) {
++  const supabase = createClient();
++  const [busTypes, setBusTypes] = useState([]);
++  const [groups, setGroups] = useState([]);
++  const [board, setBoard] = useState(null);
++  const [loading, setLoading] = useState(true);
++
++  const reload = useCallback(async () => {
++    if (!planId) return;
++    setLoading(true);
++    const [{ data: types, error: e1 }, { data: grps, error: e2 }, { data: boardRow, error: e3 }] = await Promise.all([
++      supabase.from('bus_types').select('*').eq('bus_plan_id', planId),
++      supabase.from('bus_groups').select('*').eq('bus_plan_id', planId),
++      supabase.from('bus_boards').select('*').eq('bus_plan_id', planId).maybeSingle(),
++    ]);
++    if (e1) console.error('שגיאה בטעינת סוגי אוטובוסים:', e1);
++    if (e2) console.error('שגיאה בטעינת קבוצות:', e2);
++    if (e3) console.error('שגיאה בטעינת סידור אוטובוסים:', e3);
++    setBusTypes(types || []);
++    setGroups(grps || []);
++    setBoard(boardRow || null);
++    setLoading(false);
++  }, [planId]);
++
++  useEffect(() => { reload(); }, [reload]);
++
++  async function createBusType(row) {
++    const { data, error } = await supabase.from('bus_types').insert({ ...row, bus_plan_id: planId }).select().single();
++    if (error) { console.error('שגיאה בהוספת סוג אוטובוס:', error); return null; }
++    setBusTypes(prev => [...prev, data]);
++    return data;
++  }
++  async function updateBusType(id, patch) {
++    const { data, error } = await supabase.from('bus_types').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון סוג אוטובוס:', error); return null; }
++    setBusTypes(prev => prev.map(t => (t.id === id ? data : t)));
++    return data;
++  }
++  async function deleteBusType(id) {
++    const { error } = await supabase.from('bus_types').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת סוג אוטובוס:', error); return; }
++    setBusTypes(prev => prev.filter(t => t.id !== id));
++  }
++
++  async function createGroup(row) {
++    const { data, error } = await supabase.from('bus_groups').insert({ ...row, bus_plan_id: planId }).select().single();
++    if (error) { console.error('שגיאה בהוספת קבוצה:', error); return null; }
++    setGroups(prev => [...prev, data]);
++    return data;
++  }
++  async function updateGroup(id, patch) {
++    const { data, error } = await supabase.from('bus_groups').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון קבוצה:', error); return null; }
++    setGroups(prev => prev.map(g => (g.id === id ? data : g)));
++    return data;
++  }
++  async function deleteGroup(id) {
++    const { error } = await supabase.from('bus_groups').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת קבוצה:', error); return; }
++    setGroups(prev => prev.filter(g => g.id !== id));
++  }
++
++  return { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup, reload };
++}
+diff --git a/mifalim-app/lib/useBusPlans.js b/mifalim-app/lib/useBusPlans.js
+new file mode 100644
+index 0000000..56ef119
+--- /dev/null
++++ b/mifalim-app/lib/useBusPlans.js
+@@ -0,0 +1,44 @@
++'use client';
++import { useState, useEffect, useCallback } from 'react';
++import { createClient } from './supabaseClient';
++
++// A mifal can have several bus plans (e.g. one per destination/direction) — this manages the
++// plan list itself; useBusPlanDetail.js manages one plan's bus types + groups + board.
++export function useBusPlans(mifalId) {
++  const supabase = createClient();
++  const [plans, setPlans] = useState([]);
++  const [loading, setLoading] = useState(true);
++
++  const reload = useCallback(async () => {
++    if (!mifalId) return;
++    setLoading(true);
++    const { data, error } = await supabase.from('bus_plans').select('*').eq('mifal_id', mifalId).order('created_at', { ascending: true });
++    if (error) console.error('שגיאה בטעינת תוכניות הסעה:', error);
++    setPlans(data || []);
++    setLoading(false);
++  }, [mifalId]);
++
++  useEffect(() => { reload(); }, [reload]);
++
++  async function createPlan(name) {
++    const { data, error } = await supabase.from('bus_plans').insert({ mifal_id: mifalId, name }).select().single();
++    if (error) { console.error('שגיאה ביצירת תוכנית הסעה:', error); return null; }
++    setPlans(prev => [...prev, data]);
++    return data;
++  }
++
++  async function updatePlan(id, patch) {
++    const { data, error } = await supabase.from('bus_plans').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון תוכנית הסעה:', error); return null; }
++    setPlans(prev => prev.map(p => (p.id === id ? data : p)));
++    return data;
++  }
++
++  async function deletePlan(id) {
++    const { error } = await supabase.from('bus_plans').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת תוכנית הסעה:', error); return; }
++    setPlans(prev => prev.filter(p => p.id !== id));
++  }
++
++  return { plans, loading, createPlan, updatePlan, deletePlan };
++}
