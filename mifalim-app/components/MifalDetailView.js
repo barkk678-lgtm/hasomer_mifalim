@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
+import { MifalModal } from './MifalimList';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
@@ -23,6 +24,26 @@ function formatDate(iso) {
 function money(n) {
   return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪';
 }
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(dateStr) - today) / 86400000);
+}
+function taskUrgency(t) {
+  if (t.is_completed) return 'done';
+  const d = daysUntil(t.deadline);
+  if (d === null) return 'normal';
+  if (d < 0) return 'overdue';
+  if (d <= 2) return 'soon';
+  return 'normal';
+}
+const URGENCY_STYLE = {
+  overdue: { bg: C.rustSoft, border: C.rust },
+  soon: { bg: C.amberSoft, border: C.amber },
+  done: { bg: C.greenGoodSoft, border: C.greenGood },
+  normal: { bg: C.surface, border: C.line },
+};
 
 function dateRangeLabel(m) {
   const single = m.type === 'day_trip';
@@ -71,10 +92,70 @@ function StakeholdersModal({ open, onClose, stakeholders, onCreate, onDelete }) 
 }
 
 /* ============================== TASKS TAB (kanban + table) ============================== */
+function TaskCard({ task, onUpdate, onDelete }) {
+  const [name, setName] = useState(task.task_name);
+  const [comments, setComments] = useState(task.comments || '');
+  const [deadline, setDeadline] = useState(task.deadline || '');
+  const u = URGENCY_STYLE[taskUrgency(task)];
+
+  return (
+    <div draggable onDragStart={e => e.dataTransfer.setData('text/plain', task.id)} className="rounded-lg p-2.5 shadow-sm cursor-grab relative" style={{ background: u.bg, border: `1px solid ${u.border}` }}>
+      <button onClick={() => onDelete(task.id)} className="absolute top-1.5 left-1.5" style={{ color: C.inkSoft }}><Trash2 size={12} /></button>
+      <input
+        value={name} onChange={e => setName(e.target.value)}
+        onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }}
+        className="w-full text-sm font-semibold bg-transparent outline-none mb-1 pl-4"
+      />
+      <input
+        value={comments} onChange={e => setComments(e.target.value)}
+        onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }}
+        placeholder="הערות" className="w-full text-[11px] bg-transparent outline-none mb-1" style={{ color: C.inkSoft }}
+      />
+      <div className="flex items-center justify-between">
+        <input
+          type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+          onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }}
+          className="text-[11px] bg-transparent outline-none"
+        />
+        <button onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })} className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={task.is_completed ? { background: C.greenGood, color: '#fff' } : { background: '#fff', color: C.inkSoft, border: `1px solid ${C.line}` }}>
+          {task.is_completed ? 'הושלם' : 'פתוח'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TaskTableRow({ task, onUpdate, onDelete }) {
+  const [name, setName] = useState(task.task_name);
+  const [comments, setComments] = useState(task.comments || '');
+  const [deadline, setDeadline] = useState(task.deadline || '');
+  const u = URGENCY_STYLE[taskUrgency(task)];
+
+  return (
+    <tr style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
+      <td className="px-2 py-1.5"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }} className="w-full bg-transparent outline-none text-sm px-2 py-1" /></td>
+      <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{task.assigned_to || '—'}</td>
+      <td className="px-2 py-1.5"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }} className="bg-transparent outline-none text-xs px-2 py-1" /></td>
+      <td className="px-2 py-1.5"><input value={comments} onChange={e => setComments(e.target.value)} onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }} placeholder="הערות" className="w-full bg-transparent outline-none text-xs px-2 py-1" style={{ color: C.inkSoft }} /></td>
+      <td className="px-4 py-2.5">
+        <button
+          onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })}
+          className="px-2.5 py-1 rounded-full text-xs font-semibold"
+          style={task.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
+        >
+          {task.is_completed ? 'הושלם' : 'פתוח'}
+        </button>
+      </td>
+      <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onDelete(task.id)} title="מחיקה" /></td>
+    </tr>
+  );
+}
+
 function TasksTab({ mifalId }) {
   const { tasks, loading, createTask, updateTask, deleteTask } = useMifalTasks(mifalId);
   const { stakeholders, createStakeholder, deleteStakeholder } = useStakeholders(mifalId);
   const [layout, setLayout] = useState('kanban');
+  const [showAll, setShowAll] = useState(false);
   const [stakeholdersOpen, setStakeholdersOpen] = useState(false);
   const [taskName, setTaskName] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
@@ -88,6 +169,7 @@ function TasksTab({ mifalId }) {
     setTaskName(''); setAssignedTo(''); setDeadline('');
   }
 
+  const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
   const lanes = [...stakeholders.map(s => ({ id: s.full_name, label: s.full_name || 'ללא שם' })), { id: UNASSIGNED, label: 'לא משויך' }];
 
   function moveTask(taskId, laneId) {
@@ -102,9 +184,14 @@ function TasksTab({ mifalId }) {
         <button onClick={() => setStakeholdersOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: C.forest, color: '#fff' }}>
           <UserPlus size={13} /> בעלי התפקידים במפעל ({stakeholders.length})
         </button>
-        <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-          <button onClick={() => setLayout('kanban')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'kanban' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><LayoutGrid size={13} /> קנבן</button>
-          <button onClick={() => setLayout('table')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'table' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><TableIcon size={13} /> טבלה</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowAll(s => !s)} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
+            {showAll ? 'הצג משימות פתוחות בלבד' : 'הצג את כל המשימות'}
+          </button>
+          <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+            <button onClick={() => setLayout('kanban')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'kanban' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><LayoutGrid size={13} /> קנבן</button>
+            <button onClick={() => setLayout('table')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'table' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><TableIcon size={13} /> טבלה</button>
+          </div>
         </div>
       </div>
 
@@ -134,7 +221,7 @@ function TasksTab({ mifalId }) {
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-2">
             {lanes.map(lane => {
-              const laneTasks = tasks.filter(t => (t.assigned_to || '') === (lane.id === UNASSIGNED ? '' : lane.id));
+              const laneTasks = visible.filter(t => (t.assigned_to || '') === (lane.id === UNASSIGNED ? '' : lane.id));
               return (
                 <div
                   key={lane.id}
@@ -146,24 +233,7 @@ function TasksTab({ mifalId }) {
                 >
                   <div className="text-xs font-bold mb-2 px-1" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></div>
                   <div className="flex flex-col gap-2">
-                    {laneTasks.map(t => (
-                      <div
-                        key={t.id}
-                        draggable
-                        onDragStart={e => e.dataTransfer.setData('text/plain', t.id)}
-                        className="rounded-lg p-2.5 shadow-sm cursor-grab relative"
-                        style={t.is_completed ? { background: C.greenGoodSoft, border: `1px solid ${C.greenGood}` } : { background: C.surface, border: `1px solid ${C.line}` }}
-                      >
-                        <button onClick={() => deleteTask(t.id)} className="absolute top-1.5 left-1.5" style={{ color: C.inkSoft }}><Trash2 size={12} /></button>
-                        <div className="text-sm font-semibold mb-1 pl-4">{t.task_name}</div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px]" style={{ color: C.inkSoft }}>{formatDate(t.deadline)}</span>
-                          <button onClick={() => updateTask(t.id, { is_completed: !t.is_completed })} className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={t.is_completed ? { background: C.greenGood, color: '#fff' } : { background: '#fff', color: C.inkSoft, border: `1px solid ${C.line}` }}>
-                            {t.is_completed ? 'הושלם' : 'פתוח'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    {laneTasks.map(t => <TaskCard key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
                   </div>
                 </div>
               );
@@ -172,40 +242,29 @@ function TasksTab({ mifalId }) {
         )
       ) : (
         <Card>
-          {tasks.length === 0 ? (
-            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות עדיין.</p>
+          {visible.length === 0 ? (
+            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות להצגה.</p>
           ) : (
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ background: '#E3E4D6' }}>
-                  {['משימה', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map(h => (
+                  {['משימה', 'אחראי', 'תאריך יעד', 'הערות', 'סטטוס', ''].map(h => (
                     <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {tasks.map(t => (
-                  <tr key={t.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                    <td className="px-4 py-2.5">{t.task_name}</td>
-                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
-                    <td className="px-4 py-2.5">
-                      <button
-                        onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
-                        className="px-2.5 py-1 rounded-full text-xs font-semibold"
-                        style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
-                      >
-                        {t.is_completed ? 'הושלם' : 'פתוח'}
-                      </button>
-                    </td>
-                    <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
-                  </tr>
-                ))}
+                {visible.map(t => <TaskTableRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
               </tbody>
             </table>
           )}
         </Card>
       )}
+      <div className="flex flex-wrap gap-3 mt-3 text-[11px]" style={{ color: C.inkSoft }}>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.rust }} />חריגת דד-ליין</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.amber }} />יעד תוך יומיים</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.greenGood }} />הושלם</span>
+      </div>
     </div>
   );
 }
@@ -461,34 +520,85 @@ function BudgetTab({ mifalId }) {
   );
 }
 
+function SummaryStat({ label, value, tone }) {
+  const toneColor = tone === 'good' ? C.greenGood : tone === 'rust' ? C.rust : C.ink;
+  return (
+    <div className="rounded-xl p-3.5 flex-1 min-w-[130px]" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
+      <div className="text-[11px] font-semibold mb-1" style={{ color: C.inkSoft }}>{label}</div>
+      <div className="text-base font-bold" style={{ color: toneColor }}>{value}</div>
+    </div>
+  );
+}
+
 export default function MifalDetailView({ mifalId }) {
-  const { mifal, loading } = useMifal(mifalId);
+  const { mifal, loading, updateMifal } = useMifal(mifalId);
+  const { tiers } = usePricingTiers(mifalId);
+  const { income, expenses } = useBudget('mifal', mifalId);
   const [tab, setTab] = useState('tasks');
+  const [editOpen, setEditOpen] = useState(false);
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
   if (!mifal) return <p className="text-sm" style={{ color: C.rust }}>המפעל לא נמצא.</p>;
 
   const def = ALL_TYPES[mifal.type] || {};
   const Icon = def.icon;
+  const isPrep = mifal.type === 'preparation';
+
+  const expectedParticipants = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
+  const actualParticipants = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
+  const extIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
+  const expectedIncome = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0), 0) + extIncome;
+  const actualIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0) + extIncome;
+  const expectedBalance = expectedIncome - totalExpenses;
+  const actualBalance = actualIncome - totalExpenses;
 
   return (
     <div>
       <Link href="/" className="flex items-center gap-1.5 text-sm font-medium mb-4" style={{ color: C.inkSoft }}><ArrowRight size={15} /> חזרה</Link>
 
+      <MifalModal open={editOpen} onClose={() => setEditOpen(false)} existing={mifal} onSave={updateMifal} />
+
       <div className="rounded-xl p-5 mb-5" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-        <div className="flex items-center gap-2 mb-1">
-          {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
-          <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
+            <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
+          </div>
+          <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
         </div>
         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
           <InfoField label="בעל תפקיד אחראי" value={mifal.lead_role} />
+          <InfoField label="רשויות" value={(mifal.target_municipalities || []).join(', ')} />
+          {!isPrep && <InfoField label="קהל יעד" value={(mifal.target_audience || []).join(', ')} />}
+          <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
+          <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
           <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
           <InfoField label="תאריכים" value={dateRangeLabel(mifal)} />
           <InfoField label="מיקום" value={mifal.accommodation} />
           <InfoField label="מסלולים" value={mifal.routes} />
           <InfoField label="הערות" value={mifal.comments} />
         </div>
+
+        {!isPrep && (
+          <div className="flex flex-wrap gap-4 mt-5 pt-4 border-t" style={{ borderColor: C.line }}>
+            <div className="flex-1 min-w-[280px]">
+              <div className="text-xs font-bold mb-2 text-center py-1 rounded-md" style={{ color: C.forestDark, background: C.ochreSoft }}>תכנון (צפוי)</div>
+              <div className="flex gap-2">
+                <SummaryStat label='סה"כ צפי חניכים' value={expectedParticipants} />
+                <SummaryStat label="יתרה צפויה" value={money(expectedBalance)} tone={expectedBalance >= 0 ? 'good' : 'rust'} />
+              </div>
+            </div>
+            <div className="flex-1 min-w-[280px]">
+              <div className="text-xs font-bold mb-2 text-center py-1 rounded-md" style={{ color: C.forestDark, background: C.greenGoodSoft }}>בפועל</div>
+              <div className="flex gap-2">
+                <SummaryStat label='סה"כ חניכים בפועל' value={actualParticipants} />
+                <SummaryStat label="יתרה עדכנית" value={money(actualBalance)} tone={actualBalance >= 0 ? 'good' : 'rust'} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-1 mb-5 border-b" style={{ borderColor: C.line }}>

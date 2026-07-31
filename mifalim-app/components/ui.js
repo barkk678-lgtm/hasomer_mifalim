@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, X, MapPin } from 'lucide-react';
+import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown } from 'lucide-react';
 import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
+import { exportToExcel } from '../lib/exportExcel';
 
 export function Field({ label, children, hint }) {
   return (
@@ -192,6 +193,54 @@ export function MunicipalitySelect({ value, onChange }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ExportButton({ rows, columns, filename }) {
+  return (
+    <button onClick={() => exportToExcel(rows, columns, filename)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.greenGoodSoft, color: C.greenGood }}>
+      <FileSpreadsheet size={13} /> ייצוא לאקסל
+    </button>
+  );
+}
+
+// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range'.
+export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const isActive = type === 'text' ? !!value : type === 'select' ? value !== 'all' : Array.isArray(value) ? (value[0] !== '' || value[1] !== '') : false;
+  return (
+    <div className="relative inline-flex items-center gap-1" ref={ref}>
+      {onSort ? (
+        <button className="flex items-center gap-1" onClick={() => onSort(sortKey)}>{label}<ArrowUpDown size={11} style={{ opacity: activeSortKey === sortKey ? 1 : 0.4 }} /></button>
+      ) : <span>{label}</span>}
+      <button onClick={() => setOpen(o => !o)} title="סינון" className="p-0.5 rounded"><Filter size={11} style={{ color: isActive ? C.ochreSoft : 'rgba(255,255,255,0.6)' }} /></button>
+      {open && (
+        <div onClick={e => e.stopPropagation()} className="absolute z-30 top-full mt-1 right-0 rounded-lg shadow-lg p-3" style={{ background: C.surface, border: `1px solid ${C.line}`, minWidth: 190 }}>
+          {type === 'text' && (
+            <input autoFocus value={value} onChange={e => onChange(e.target.value)} placeholder="הקלד לסינון..." className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+          )}
+          {type === 'select' && (
+            <select value={value} onChange={e => onChange(e.target.value)} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+              <option value="all">הכל</option>
+              {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
+          {type === 'range' && (
+            <div className="flex gap-2 items-center">
+              <input type="number" value={value[0]} onChange={e => onChange([e.target.value, value[1]])} placeholder="מ-" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+              <span className="text-xs" style={{ color: C.inkSoft }}>עד</span>
+              <input type="number" value={value[1]} onChange={e => onChange([value[0], e.target.value])} placeholder="עד" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+            </div>
+          )}
         </div>
       )}
     </div>

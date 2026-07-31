@@ -27,9 +27,24 @@ export function useMifalim() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('mifalim').select('*').order('created_at', { ascending: false });
+    const [{ data, error }, { data: tiers }, { data: income }, { data: expenses }] = await Promise.all([
+      supabase.from('mifalim').select('*').order('created_at', { ascending: false }),
+      supabase.from('pricing_tiers').select('mifal_id, actual_participants, price_per_participant'),
+      supabase.from('external_income').select('owner_id, amount').eq('owner_type', 'mifal'),
+      supabase.from('expenses').select('owner_id, quantity, unit_price').eq('owner_type', 'mifal'),
+    ]);
     if (error) console.error('שגיאה בטעינת מפעלים:', error);
-    setMifalim(data || []);
+    // Cheap client-side aggregation (participants + balance) for the list's summary columns —
+    // one round-trip per underlying table instead of one per mifal.
+    const withSummary = (data || []).map(m => {
+      const myTiers = (tiers || []).filter(t => t.mifal_id === m.id);
+      const participants = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
+      const tiersIncome = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
+      const extIncome = (income || []).filter(r => r.owner_id === m.id).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalExpenses = (expenses || []).filter(r => r.owner_id === m.id).reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
+      return { ...m, participants, balance: tiersIncome + extIncome - totalExpenses };
+    });
+    setMifalim(withSummary);
     setLoading(false);
   }, []);
 
@@ -38,14 +53,14 @@ export function useMifalim() {
   async function createMifal(mifal) {
     const { data, error } = await supabase.from('mifalim').insert(mifal).select().single();
     if (error) { console.error('שגיאה ביצירת מפעל:', error); return null; }
-    setMifalim(prev => [data, ...prev]); // same "new items go on top" behavior as the original app
+    setMifalim(prev => [{ ...data, participants: 0, balance: 0 }, ...prev]); // same "new items go on top" behavior as the original app
     return data;
   }
 
   async function updateMifal(id, patch) {
     const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
-    setMifalim(prev => prev.map(m => (m.id === id ? data : m)));
+    setMifalim(prev => prev.map(m => (m.id === id ? { ...data, participants: m.participants, balance: m.balance } : m)));
     return data;
   }
 
