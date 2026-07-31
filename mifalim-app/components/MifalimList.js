@@ -1,8 +1,8 @@
 'use client';
-import { useState } from 'react';
-import { Plus, Trash2, Compass, Tent, Users, Wrench } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, Pencil, Compass, Tent, Users, Wrench } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
-import { C, NUMFONT, STATUS_OPTIONS, STATUS_TONE } from '../lib/designSystem';
+import { C, STATUS_OPTIONS, STATUS_TONE } from '../lib/designSystem';
 import { Field, TextInput, Select, Badge, IconButton, Card, Modal } from './ui';
 
 const ALL_TYPES = {
@@ -16,18 +16,22 @@ function emptyDraft() {
   return { name: '', type: 'day_trip', lead_role: '', status: 'מתוכנן' };
 }
 
-function CreateMifalModal({ open, onClose, onCreate }) {
+function MifalModal({ open, onClose, existing, onSave }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [saving, setSaving] = useState(false);
+  const isEdit = !!existing;
+
+  useEffect(() => {
+    if (open) setDraft(existing ? { name: existing.name || '', type: existing.type, lead_role: existing.lead_role || '', status: existing.status } : emptyDraft());
+  }, [open, existing]);
 
   function set(patch) { setDraft(d => ({ ...d, ...patch })); }
 
   async function handleSave() {
     if (!draft.name.trim()) return;
     setSaving(true);
-    await onCreate(draft);
+    await onSave(draft);
     setSaving(false);
-    setDraft(emptyDraft());
     onClose();
   }
 
@@ -35,12 +39,12 @@ function CreateMifalModal({ open, onClose, onCreate }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="יצירת מפעל חדש"
+      title={isEdit ? 'עריכת מפעל' : 'יצירת מפעל חדש'}
       footer={
         <>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
           <button disabled={saving || !draft.name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.name.trim() ? 0.6 : 1 }}>
-            {saving ? 'שומר...' : 'יצירה'}
+            {saving ? 'שומר...' : isEdit ? 'שמירה' : 'יצירה'}
           </button>
         </>
       }
@@ -68,12 +72,17 @@ function CreateMifalModal({ open, onClose, onCreate }) {
 }
 
 export default function MifalimList() {
-  const { mifalim, loading, createMifal, deleteMifal } = useMifalim();
+  const { mifalim, loading, createMifal, updateMifal, deleteMifal } = useMifalim();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const editingMifal = mifalim.find(m => m.id === editId);
 
   return (
     <div>
-      <CreateMifalModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={createMifal} />
+      <h1 className="text-2xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>כל המפעלים</h1>
+
+      <MifalModal open={createOpen} onClose={() => setCreateOpen(false)} existing={null} onSave={createMifal} />
+      <MifalModal open={!!editId} onClose={() => setEditId(null)} existing={editingMifal} onSave={draft => updateMifal(editId, draft)} />
 
       <div className="flex items-center justify-between mb-2">
         <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest }}>
@@ -81,7 +90,7 @@ export default function MifalimList() {
         </button>
       </div>
 
-      <Card title="כל המפעלים (נתונים אמיתיים מ-Supabase)">
+      <Card>
         {loading ? (
           <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
         ) : mifalim.length === 0 ? (
@@ -94,6 +103,7 @@ export default function MifalimList() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ background: C.forest }}>
+                  <th className="w-10"></th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">שם המפעל</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">סוג</th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">אחראי</th>
@@ -107,6 +117,7 @@ export default function MifalimList() {
                   const Icon = def.icon || Tent;
                   return (
                     <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                      <td className="px-2 py-3 text-center"><IconButton icon={Pencil} title="עריכה" onClick={() => setEditId(m.id)} /></td>
                       <td className="px-4 py-3 font-semibold" style={{ color: C.forestDark }}>{m.name || 'מפעל ללא שם'}</td>
                       <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}><Icon size={13} />{def.label || m.type}</span></td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>

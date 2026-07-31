@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '../lib/supabaseServer';
-import TopNav from '../components/TopNav';
-import MifalimList from '../components/MifalimList';
+import { createClient } from '../../lib/supabaseServer';
+import TopNav from '../../components/TopNav';
+import TasksPage from '../../components/TasksPage';
 
-export default async function HomePage() {
+export default async function TasksRoute() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -15,7 +15,7 @@ export default async function HomePage() {
     <div>
       <TopNav userEmail={user.email} role={profile?.role || '...'} />
       <main className="max-w-7xl mx-auto p-8">
-        <MifalimList />
+        <TasksPage />
       </main>
     </div>
   );
