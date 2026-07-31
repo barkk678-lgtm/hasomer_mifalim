@@ -1,167 +1,276 @@
-diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index 498056a..2891ac9 100644
---- a/mifalim-app/components/MifalDetailView.js
-+++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,13 +1,14 @@
- 'use client';
- import { useState } from 'react';
- import Link from 'next/link';
--import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays } from 'lucide-react';
-+import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
- import { useMifal } from '../lib/useMifal';
- import { useMifalTasks } from '../lib/useMifalTasks';
- import { useBudget } from '../lib/useBudget';
- import { useStakeholders } from '../lib/useStakeholders';
- import { usePricingTiers } from '../lib/usePricingTiers';
- import { useOccurrences } from '../lib/useOccurrences';
-+import { useFiles } from '../lib/useFiles';
- import { C, ALL_TYPES } from '../lib/designSystem';
- import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
- 
-@@ -263,6 +264,52 @@ function OccurrencesTab({ mifalId }) {
-   );
- }
- 
-+/* ============================== FILES TAB ============================== */
-+function FilesTab({ mifalId }) {
-+  const { files, loading, uploadFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
-+  const [uploading, setUploading] = useState(false);
+diff --git a/mifalim-app/app/mega/[id]/page.js b/mifalim-app/app/mega/[id]/page.js
+new file mode 100644
+index 0000000..ed8e186
+--- /dev/null
++++ b/mifalim-app/app/mega/[id]/page.js
+@@ -0,0 +1,22 @@
++import { redirect } from 'next/navigation';
++import { createClient } from '../../../lib/supabaseServer';
++import TopNav from '../../../components/TopNav';
++import MegaProjectDetailView from '../../../components/MegaProjectDetailView';
 +
-+  async function handleFileChange(e) {
-+    const file = e.target.files?.[0];
-+    e.target.value = '';
-+    if (!file) return;
-+    setUploading(true);
-+    await uploadFile(file);
-+    setUploading(false);
-+  }
++export default async function MegaProjectDetailRoute({ params }) {
++  const supabase = createClient();
++  const { data: { user } } = await supabase.auth.getUser();
 +
-+  async function handleDownload(f) {
-+    const url = await getDownloadUrl(f);
-+    if (url) window.open(url, '_blank');
-+  }
++  if (!user) redirect('/login');
++
++  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
 +
 +  return (
-+    <Card title="קבצים">
-+      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white cursor-pointer mb-4" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
-+        <Upload size={15} /> {uploading ? 'מעלה...' : 'העלאת קובץ'}
-+        <input type="file" className="hidden" onChange={handleFileChange} disabled={uploading} />
-+      </label>
-+      {loading ? (
-+        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-+      ) : files.length === 0 ? (
-+        <p className="text-sm" style={{ color: C.inkSoft }}>אין קבצים עדיין.</p>
-+      ) : (
++    <div>
++      <TopNav userEmail={user.email} role={profile?.role || '...'} />
++      <main className="max-w-5xl mx-auto p-8">
++        <MegaProjectDetailView megaProjectId={params.id} />
++      </main>
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/MegaProjectDetailView.js b/mifalim-app/components/MegaProjectDetailView.js
+new file mode 100644
+index 0000000..9678e99
+--- /dev/null
++++ b/mifalim-app/components/MegaProjectDetailView.js
+@@ -0,0 +1,171 @@
++'use client';
++import { useState } from 'react';
++import Link from 'next/link';
++import { ArrowRight, Plus, Trash2, Link2 } from 'lucide-react';
++import { useMegaProject } from '../lib/useMegaProject';
++import { useBudget } from '../lib/useBudget';
++import { C, ALL_TYPES } from '../lib/designSystem';
++import { StatusBadge, IconButton, TextInput, Card, Modal } from './ui';
++
++function money(n) {
++  return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪';
++}
++
++function LinkMifalModal({ open, onClose, allMifalim, linkedIds, onLink, onUnlink }) {
++  return (
++    <Modal open={open} onClose={onClose} title="שיוך מפעלים לפרויקט העל" footer={<button onClick={onClose} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}>סגירה</button>}>
++      <div className="rounded-lg overflow-hidden max-h-96 overflow-y-auto" style={{ border: `1px solid ${C.line}` }}>
 +        <table className="w-full text-sm border-collapse">
++          <thead>
++            <tr style={{ background: '#E3E4D6' }}>
++              <th className="w-10"></th>
++              <th className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>שם המפעל</th>
++              <th className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>סוג</th>
++            </tr>
++          </thead>
 +          <tbody>
-+            {files.map(f => (
-+              <tr key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
-+                <td className="px-4 py-2"><button onClick={() => handleDownload(f)} className="hover:underline" style={{ color: C.linkBlue }}>{f.name}</button></td>
-+                <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-+                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteFile(f)} title="מחיקה" /></td>
-+              </tr>
-+            ))}
++            {allMifalim.map(m => {
++              const linked = linkedIds.includes(m.id);
++              const def = ALL_TYPES[m.type] || {};
++              return (
++                <tr key={m.id} style={{ borderTop: `1px solid ${C.line}` }}>
++                  <td className="px-3 py-2 text-center">
++                    <input type="checkbox" checked={linked} onChange={() => (linked ? onUnlink(m.id) : onLink(m.id))} />
++                  </td>
++                  <td className="px-3 py-2 font-medium" style={{ color: C.forestDark }}>{m.name}</td>
++                  <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{def.label || m.type}</td>
++                </tr>
++              );
++            })}
 +          </tbody>
 +        </table>
-+      )}
-+    </Card>
++      </div>
++    </Modal>
 +  );
 +}
 +
- /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
- function PricingTiersSection({ mifalId }) {
-   const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
-@@ -454,11 +501,15 @@ export default function MifalDetailView({ mifalId }) {
-         <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-           <CalendarDays size={14} /> מופעים
-         </button>
-+        <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-+          <Upload size={14} /> קבצים
-+        </button>
-       </div>
- 
-       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
-       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
-       {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
-+      {tab === 'files' && <FilesTab mifalId={mifal.id} />}
-     </div>
-   );
- }
-diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
++export default function MegaProjectDetailView({ megaProjectId }) {
++  const { megaProject, linkedMifalim, allMifalim, loading, linkMifal, unlinkMifal } = useMegaProject(megaProjectId);
++  const { income, expenses, loading: budgetLoading, addIncome, deleteIncome, addExpense, deleteExpense } = useBudget('mega_project', megaProjectId);
++  const [linkOpen, setLinkOpen] = useState(false);
++  const [incomeSource, setIncomeSource] = useState('');
++  const [incomeAmount, setIncomeAmount] = useState('');
++  const [expenseName, setExpenseName] = useState('');
++  const [expenseQty, setExpenseQty] = useState('');
++  const [expenseUnit, setExpenseUnit] = useState('');
++
++  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
++  if (!megaProject) return <p className="text-sm" style={{ color: C.rust }}>הפרויקט לא נמצא.</p>;
++
++  const ownIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
++  const ownExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
++  const balance = ownIncome - ownExpenses;
++
++  async function handleAddIncome(e) {
++    e.preventDefault();
++    if (!incomeSource.trim()) return;
++    await addIncome({ source_name: incomeSource.trim(), amount: Number(incomeAmount) || 0 });
++    setIncomeSource(''); setIncomeAmount('');
++  }
++  async function handleAddExpense(e) {
++    e.preventDefault();
++    if (!expenseName.trim()) return;
++    await addExpense({ expense_name: expenseName.trim(), quantity: Number(expenseQty) || 0, unit_price: Number(expenseUnit) || 0 });
++    setExpenseName(''); setExpenseQty(''); setExpenseUnit('');
++  }
++
++  return (
++    <div>
++      <Link href="/mega" className="flex items-center gap-1.5 text-sm font-medium mb-4" style={{ color: C.inkSoft }}><ArrowRight size={15} /> חזרה לפרויקטי על</Link>
++
++      <div className="flex items-center justify-between mb-5">
++        <h1 className="text-xl font-bold" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{megaProject.name}</h1>
++      </div>
++
++      <div className="flex gap-2 mb-5">
++        <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.greenGoodSoft, border: `1px solid ${C.greenGood}40` }}>
++          <div className="text-[10px] font-semibold" style={{ color: C.greenGood }}>סה"כ הכנסה (פרויקט על בלבד)</div>
++          <div className="text-base font-bold" style={{ color: C.greenGood }}>{money(ownIncome)}</div>
++        </div>
++        <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.rustSoft, border: `1px solid ${C.rust}40` }}>
++          <div className="text-[10px] font-semibold" style={{ color: C.rust }}>סה"כ הוצאה</div>
++          <div className="text-base font-bold" style={{ color: C.rust }}>{money(ownExpenses)}</div>
++        </div>
++        <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: balance >= 0 ? C.greenGoodSoft : C.rustSoft, border: `1px solid ${(balance >= 0 ? C.greenGood : C.rust)}40` }}>
++          <div className="text-[10px] font-semibold" style={{ color: balance >= 0 ? C.greenGood : C.rust }}>יתרה</div>
++          <div className="text-base font-bold" style={{ color: balance >= 0 ? C.greenGood : C.rust }}>{money(balance)}</div>
++        </div>
++      </div>
++
++      <LinkMifalModal open={linkOpen} onClose={() => setLinkOpen(false)} allMifalim={allMifalim} linkedIds={linkedMifalim.map(m => m.id)} onLink={linkMifal} onUnlink={unlinkMifal} />
++
++      <Card title='דו"ח מפעלים' right={
++        <button onClick={() => setLinkOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: C.forest }}><Link2 size={13} /> שייך מפעל</button>
++      }>
++        {linkedMifalim.length === 0 ? (
++          <p className="text-xs" style={{ color: C.inkSoft }}>אין עדיין מפעלים משויכים. השתמשו בכפתור "שייך מפעל".</p>
++        ) : (
++          <div className="flex flex-col gap-2">
++            {linkedMifalim.map(m => (
++              <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ border: `1px solid ${C.line}` }}>
++                <Link href={`/mifal/${m.id}`} className="text-sm font-semibold hover:underline" style={{ color: C.forestDark }}>{m.name}</Link>
++                <div className="flex items-center gap-2">
++                  <StatusBadge status={m.status} />
++                  <IconButton icon={Trash2} tone="danger" onClick={() => unlinkMifal(m.id)} title="ביטול שיוך" />
++                </div>
++              </div>
++            ))}
++          </div>
++        )}
++      </Card>
++
++      {budgetLoading ? null : (
++        <>
++          <Card title="הכנסות (על)">
++            <form onSubmit={handleAddIncome} className="flex flex-wrap gap-2 mb-3">
++              <TextInput value={incomeSource} onChange={e => setIncomeSource(e.target.value)} placeholder="מקור ההכנסה" className="flex-1 min-w-[160px]" />
++              <TextInput type="number" value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} placeholder="סכום" className="w-32" />
++              <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
++            </form>
++            {income.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הכנסות עדיין.</p> : (
++              <table className="w-full text-sm border-collapse">
++                <tbody>
++                  {income.map(r => (
++                    <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
++                      <td className="px-4 py-2">{r.source_name}</td>
++                      <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money(r.amount)}</td>
++                      <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteIncome(r.id)} title="מחיקה" /></td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            )}
++          </Card>
++
++          <Card title="הוצאות (על)">
++            <form onSubmit={handleAddExpense} className="flex flex-wrap gap-2 mb-3">
++              <TextInput value={expenseName} onChange={e => setExpenseName(e.target.value)} placeholder="תיאור ההוצאה" className="flex-1 min-w-[160px]" />
++              <TextInput type="number" value={expenseQty} onChange={e => setExpenseQty(e.target.value)} placeholder="כמות" className="w-24" />
++              <TextInput type="number" value={expenseUnit} onChange={e => setExpenseUnit(e.target.value)} placeholder="מחיר ליחידה" className="w-32" />
++              <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
++            </form>
++            {expenses.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הוצאות עדיין.</p> : (
++              <table className="w-full text-sm border-collapse">
++                <tbody>
++                  {expenses.map(r => (
++                    <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
++                      <td className="px-4 py-2">{r.expense_name}</td>
++                      <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{r.quantity} × {money(r.unit_price)}</td>
++                      <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0))}</td>
++                      <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteExpense(r.id)} title="מחיקה" /></td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            )}
++          </Card>
++        </>
++      )}
++    </div>
++  );
++}
+diff --git a/mifalim-app/components/MegaProjectsPage.js b/mifalim-app/components/MegaProjectsPage.js
+index 97840b4..36380fd 100644
+--- a/mifalim-app/components/MegaProjectsPage.js
++++ b/mifalim-app/components/MegaProjectsPage.js
+@@ -1,5 +1,6 @@
+ 'use client';
+ import { useState } from 'react';
++import Link from 'next/link';
+ import { Plus, Trash2, Layers } from 'lucide-react';
+ import { useMegaProjects } from '../lib/useMegaProjects';
+ import { C } from '../lib/designSystem';
+@@ -65,7 +66,7 @@ export default function MegaProjectsPage() {
+         <div className="flex flex-col gap-2">
+           {megaProjects.map(mp => (
+             <div key={mp.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
+-              <span className="font-semibold" style={{ color: C.forestDark }}>{mp.name}</span>
++              <Link href={`/mega/${mp.id}`} className="font-semibold hover:underline" style={{ color: C.forestDark }}>{mp.name}</Link>
+               <IconButton icon={Trash2} tone="danger" onClick={() => { if (confirm(`למחוק את "${mp.name}"?`)) deleteMegaProject(mp.id); }} title="מחיקה" />
+             </div>
+           ))}
+diff --git a/mifalim-app/lib/useMegaProject.js b/mifalim-app/lib/useMegaProject.js
 new file mode 100644
-index 0000000..2724a7c
+index 0000000..5c65e5c
 --- /dev/null
-+++ b/mifalim-app/lib/useFiles.js
-@@ -0,0 +1,51 @@
++++ b/mifalim-app/lib/useMegaProject.js
+@@ -0,0 +1,45 @@
 +'use client';
 +import { useState, useEffect, useCallback } from 'react';
 +import { createClient } from './supabaseClient';
 +
-+const BUCKET = 'mifal-files';
-+
-+// Shared by mifal files and mega-project files — same owner_type/owner_id pattern as useBudget.js.
-+export function useFiles(ownerType, ownerId) {
++// Single mega project + its linked mifalim (via mega_project_links).
++export function useMegaProject(id) {
 +  const supabase = createClient();
-+  const [files, setFiles] = useState([]);
++  const [megaProject, setMegaProject] = useState(null);
++  const [linkedMifalim, setLinkedMifalim] = useState([]);
++  const [allMifalim, setAllMifalim] = useState([]);
 +  const [loading, setLoading] = useState(true);
 +
 +  const reload = useCallback(async () => {
-+    if (!ownerId) return;
++    if (!id) return;
 +    setLoading(true);
-+    const { data, error } = await supabase.from('files').select('*').eq('owner_type', ownerType).eq('owner_id', ownerId).order('modified_at', { ascending: false });
-+    if (error) console.error('שגיאה בטעינת קבצים:', error);
-+    setFiles(data || []);
++    const [{ data: mp, error: e1 }, { data: links, error: e2 }, { data: all, error: e3 }] = await Promise.all([
++      supabase.from('mega_projects').select('*').eq('id', id).single(),
++      supabase.from('mega_project_links').select('mifal_id, mifalim(*)').eq('mega_project_id', id),
++      supabase.from('mifalim').select('*').order('created_at', { ascending: false }),
++    ]);
++    if (e1) console.error('שגיאה בטעינת פרויקט על:', e1);
++    if (e2) console.error('שגיאה בטעינת מפעלים מקושרים:', e2);
++    if (e3) console.error('שגיאה בטעינת מפעלים:', e3);
++    setMegaProject(mp || null);
++    setLinkedMifalim((links || []).map(l => l.mifalim).filter(Boolean));
++    setAllMifalim(all || []);
 +    setLoading(false);
-+  }, [ownerType, ownerId]);
++  }, [id]);
 +
 +  useEffect(() => { reload(); }, [reload]);
 +
-+  async function uploadFile(file) {
-+    const { data: { user } } = await supabase.auth.getUser();
-+    const path = `${ownerType}/${ownerId}/${Date.now()}_${file.name}`;
-+    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-+    if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); return null; }
-+    const { data, error } = await supabase.from('files').insert({
-+      owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, modified_by: user?.id,
-+    }).select().single();
-+    if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); return null; }
-+    setFiles(prev => [data, ...prev]);
-+    return data;
++  async function linkMifal(mifalId) {
++    const { error } = await supabase.from('mega_project_links').insert({ mega_project_id: id, mifal_id: mifalId });
++    if (error) { console.error('שגיאה בשיוך מפעל:', error); return; }
++    reload();
 +  }
 +
-+  async function deleteFile(f) {
-+    await supabase.storage.from(BUCKET).remove([f.storage_path]);
-+    const { error } = await supabase.from('files').delete().eq('id', f.id);
-+    if (error) { console.error('שגיאה במחיקת קובץ:', error); return; }
-+    setFiles(prev => prev.filter(x => x.id !== f.id));
++  async function unlinkMifal(mifalId) {
++    const { error } = await supabase.from('mega_project_links').delete().eq('mega_project_id', id).eq('mifal_id', mifalId);
++    if (error) { console.error('שגיאה בביטול שיוך:', error); return; }
++    setLinkedMifalim(prev => prev.filter(m => m.id !== mifalId));
 +  }
 +
-+  async function getDownloadUrl(f) {
-+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(f.storage_path, 60);
-+    if (error) { console.error('שגיאה ביצירת קישור הורדה:', error); return null; }
-+    return data.signedUrl;
-+  }
-+
-+  return { files, loading, uploadFile, deleteFile, getDownloadUrl };
++  return { megaProject, linkedMifalim, allMifalim, loading, linkMifal, unlinkMifal, reload };
 +}
-diff --git a/mifalim-app/supabase/schema/02_storage_bucket.sql b/mifalim-app/supabase/schema/02_storage_bucket.sql
-new file mode 100644
-index 0000000..72be443
---- /dev/null
-+++ b/mifalim-app/supabase/schema/02_storage_bucket.sql
-@@ -0,0 +1,15 @@
-+-- Creates the storage bucket used by the Files tab, plus policies allowing any
-+-- signed-in user to upload/read/delete within it. Run once in SQL Editor.
-+
-+insert into storage.buckets (id, name, public)
-+values ('mifal-files', 'mifal-files', false)
-+on conflict (id) do nothing;
-+
-+create policy "mifal-files: authenticated read" on storage.objects for select
-+  using (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
-+
-+create policy "mifal-files: authenticated upload" on storage.objects for insert
-+  with check (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
-+
-+create policy "mifal-files: authenticated delete" on storage.objects for delete
-+  using (bucket_id = 'mifal-files' and auth.role() = 'authenticated');
