@@ -1,5 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
 import { C, ALL_TYPES, STATUS_OPTIONS, LEAD_ROLES, AUDIENCE_ROWS, TRIP_TYPES, CAMP_TYPES, SEMINAR_TYPES } from '../lib/designSystem';
@@ -222,7 +223,9 @@ export default function MifalimList() {
                   return (
                     <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
                       <td className="px-2 py-3 text-center"><IconButton icon={Pencil} title="עריכה" onClick={() => setEditId(m.id)} /></td>
-                      <td className="px-4 py-3 font-semibold" style={{ color: C.forestDark }}>{m.name || 'מפעל ללא שם'}</td>
+                      <td className="px-4 py-3 font-semibold">
+                        <Link href={`/mifal/${m.id}`} className="hover:underline" style={{ color: C.forestDark }}>{m.name || 'מפעל ללא שם'}</Link>
+                      </td>
                       <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}><Icon size={13} />{def.label || m.type}</span></td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>
                       <td className="px-4 py-3 text-xs">{dateRangeLabel(m)}</td>
