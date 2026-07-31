@@ -1,12 +1,13 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays } from 'lucide-react';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
 import { useStakeholders } from '../lib/useStakeholders';
 import { usePricingTiers } from '../lib/usePricingTiers';
+import { useOccurrences } from '../lib/useOccurrences';
 import { C, ALL_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
 
@@ -208,6 +209,60 @@ function TasksTab({ mifalId }) {
   );
 }
 
+/* ============================== OCCURRENCES TAB ============================== */
+function OccurrencesTab({ mifalId }) {
+  const { occurrences, loading, createOccurrence, deleteOccurrence } = useOccurrences(mifalId);
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    await createOccurrence({ name: name.trim(), start_date: startDate || null, end_date: endDate || null, notes: notes.trim() });
+    setName(''); setStartDate(''); setEndDate(''); setNotes('');
+  }
+
+  return (
+    <Card title="מופעים">
+      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-4">
+        <TextInput value={name} onChange={e => setName(e.target.value)} placeholder="שם המופע" className="flex-1 min-w-[160px]" />
+        <TextInput type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
+        <TextInput type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
+        <TextInput value={notes} onChange={e => setNotes(e.target.value)} placeholder="הערות" className="w-40" />
+        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+      </form>
+      {loading ? (
+        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+      ) : occurrences.length === 0 ? (
+        <p className="text-sm" style={{ color: C.inkSoft }}>אין מופעים עדיין.</p>
+      ) : (
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr style={{ background: '#E3E4D6' }}>
+              {['שם המופע', 'תאריך התחלה', 'תאריך סיום', 'הערות', ''].map(h => (
+                <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {occurrences.map(o => (
+              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td className="px-4 py-2.5">{o.name}</td>
+                <td className="px-4 py-2.5 text-xs">{formatDate(o.start_date)}</td>
+                <td className="px-4 py-2.5 text-xs">{formatDate(o.end_date)}</td>
+                <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{o.notes || '—'}</td>
+                <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteOccurrence(o.id)} title="מחיקה" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
 function PricingTiersSection({ mifalId }) {
   const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
@@ -396,10 +451,14 @@ export default function MifalDetailView({ mifalId }) {
         <button onClick={() => setTab('budget')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'budget' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
           <Wallet size={14} /> תקציב
         </button>
+        <button onClick={() => setTab('occurrences')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'occurrences' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+          <CalendarDays size={14} /> מופעים
+        </button>
       </div>
 
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
+      {tab === 'occurrences' && <OccurrencesTab mifalId={mifal.id} />}
     </div>
   );
 }
