@@ -2,13 +2,13 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { C, DONUT_COLORS } from '../lib/designSystem';
 
-function BiTooltip({ active, payload, unitLabel }) {
+function BiTooltip({ active, payload, unitLabel, valueFormatter }) {
   if (!active || !payload || !payload.length) return null;
   const p = payload[0];
   return (
     <div dir="rtl" style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 10, padding: '8px 12px', boxShadow: '0 6px 18px rgba(20,30,15,0.12)', fontFamily: 'Heebo, sans-serif', fontSize: 12, textAlign: 'right', minWidth: 120 }}>
       <div style={{ fontWeight: 700, color: C.forestDark, marginBottom: 3 }}>{p.name}</div>
-      <div style={{ color: C.inkSoft }}>{unitLabel}: <strong style={{ color: C.forest }}>{p.value}</strong></div>
+      <div style={{ color: C.inkSoft }}>{unitLabel}: <strong style={{ color: C.forest }}>{valueFormatter(p.value)}</strong></div>
     </div>
   );
 }
@@ -36,7 +36,7 @@ function renderPercentLabel({ cx, cy, midAngle, innerRadius, outerRadius, percen
 
 // Reusable donut chart with a legend list: donut on the right, legend on the left, click to
 // filter (multi-select). `data` is [{ key, name, value }].
-export default function CrossFilterDonutChart({ title, unitLabel, data, selected, onToggle }) {
+export default function CrossFilterDonutChart({ title, unitLabel, data, selected, onToggle, valueFormatter = v => v }) {
   const sorted = [...data].sort((a, b) => a.name.localeCompare(b.name, 'he'));
   return (
     <div className="rounded-2xl p-5" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
@@ -55,14 +55,14 @@ export default function CrossFilterDonutChart({ title, unitLabel, data, selected
                     return <Cell key={entry.key} fill={DONUT_COLORS[i % DONUT_COLORS.length]} opacity={active ? 1 : 0.35} />;
                   })}
                 </Pie>
-                <Tooltip content={<BiTooltip unitLabel={unitLabel} />} />
+                <Tooltip content={<BiTooltip unitLabel={unitLabel} valueFormatter={valueFormatter} />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
           <div className="flex-1 flex flex-col gap-0.5 min-w-0">
             {sorted.map((entry, i) => {
               const active = selected.length === 0 || selected.includes(entry.key);
-              return <DonutLegendRow key={entry.key} color={DONUT_COLORS[i % DONUT_COLORS.length]} label={entry.name} count={entry.value} active={active} onClick={() => onToggle(entry.key)} />;
+              return <DonutLegendRow key={entry.key} color={DONUT_COLORS[i % DONUT_COLORS.length]} label={entry.name} count={valueFormatter(entry.value)} active={active} onClick={() => onToggle(entry.key)} />;
             })}
           </div>
         </div>

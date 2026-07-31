@@ -1,15 +1,15 @@
-diff --git a/mifalim-app/app/calendar/page.js b/mifalim-app/app/calendar/page.js
+diff --git a/mifalim-app/app/financials/page.js b/mifalim-app/app/financials/page.js
 new file mode 100644
-index 0000000..e80fb03
+index 0000000..91b8e4d
 --- /dev/null
-+++ b/mifalim-app/app/calendar/page.js
++++ b/mifalim-app/app/financials/page.js
 @@ -0,0 +1,22 @@
 +import { redirect } from 'next/navigation';
 +import { createClient } from '../../lib/supabaseServer';
 +import TopNav from '../../components/TopNav';
-+import CalendarPageView from '../../components/CalendarPageView';
++import FinancialsPageView from '../../components/FinancialsPageView';
 +
-+export default async function CalendarRoute() {
++export default async function FinancialsRoute() {
 +  const supabase = createClient();
 +  const { data: { user } } = await supabase.auth.getUser();
 +
@@ -21,220 +21,507 @@ index 0000000..e80fb03
 +    <div>
 +      <TopNav userEmail={user.email} role={profile?.role || '...'} />
 +      <main className="max-w-7xl mx-auto p-8">
-+        <CalendarPageView />
++        <FinancialsPageView />
 +      </main>
 +    </div>
 +  );
 +}
-diff --git a/mifalim-app/components/CalendarPageView.js b/mifalim-app/components/CalendarPageView.js
+diff --git a/mifalim-app/components/CrossFilterDonutChart.js b/mifalim-app/components/CrossFilterDonutChart.js
+index e0daafd..ba5a13d 100644
+--- a/mifalim-app/components/CrossFilterDonutChart.js
++++ b/mifalim-app/components/CrossFilterDonutChart.js
+@@ -2,13 +2,13 @@
+ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+ import { C, DONUT_COLORS } from '../lib/designSystem';
+ 
+-function BiTooltip({ active, payload, unitLabel }) {
++function BiTooltip({ active, payload, unitLabel, valueFormatter }) {
+   if (!active || !payload || !payload.length) return null;
+   const p = payload[0];
+   return (
+     <div dir="rtl" style={{ background: '#fff', border: `1px solid ${C.line}`, borderRadius: 10, padding: '8px 12px', boxShadow: '0 6px 18px rgba(20,30,15,0.12)', fontFamily: 'Heebo, sans-serif', fontSize: 12, textAlign: 'right', minWidth: 120 }}>
+       <div style={{ fontWeight: 700, color: C.forestDark, marginBottom: 3 }}>{p.name}</div>
+-      <div style={{ color: C.inkSoft }}>{unitLabel}: <strong style={{ color: C.forest }}>{p.value}</strong></div>
++      <div style={{ color: C.inkSoft }}>{unitLabel}: <strong style={{ color: C.forest }}>{valueFormatter(p.value)}</strong></div>
+     </div>
+   );
+ }
+@@ -36,7 +36,7 @@ function renderPercentLabel({ cx, cy, midAngle, innerRadius, outerRadius, percen
+ 
+ // Reusable donut chart with a legend list: donut on the right, legend on the left, click to
+ // filter (multi-select). `data` is [{ key, name, value }].
+-export default function CrossFilterDonutChart({ title, unitLabel, data, selected, onToggle }) {
++export default function CrossFilterDonutChart({ title, unitLabel, data, selected, onToggle, valueFormatter = v => v }) {
+   const sorted = [...data].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+   return (
+     <div className="rounded-2xl p-5" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
+@@ -55,14 +55,14 @@ export default function CrossFilterDonutChart({ title, unitLabel, data, selected
+                     return <Cell key={entry.key} fill={DONUT_COLORS[i % DONUT_COLORS.length]} opacity={active ? 1 : 0.35} />;
+                   })}
+                 </Pie>
+-                <Tooltip content={<BiTooltip unitLabel={unitLabel} />} />
++                <Tooltip content={<BiTooltip unitLabel={unitLabel} valueFormatter={valueFormatter} />} />
+               </PieChart>
+             </ResponsiveContainer>
+           </div>
+           <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+             {sorted.map((entry, i) => {
+               const active = selected.length === 0 || selected.includes(entry.key);
+-              return <DonutLegendRow key={entry.key} color={DONUT_COLORS[i % DONUT_COLORS.length]} label={entry.name} count={entry.value} active={active} onClick={() => onToggle(entry.key)} />;
++              return <DonutLegendRow key={entry.key} color={DONUT_COLORS[i % DONUT_COLORS.length]} label={entry.name} count={valueFormatter(entry.value)} active={active} onClick={() => onToggle(entry.key)} />;
+             })}
+           </div>
+         </div>
+diff --git a/mifalim-app/components/FinancialsPageView.js b/mifalim-app/components/FinancialsPageView.js
 new file mode 100644
-index 0000000..1122504
+index 0000000..c045e58
 --- /dev/null
-+++ b/mifalim-app/components/CalendarPageView.js
-@@ -0,0 +1,21 @@
++++ b/mifalim-app/components/FinancialsPageView.js
+@@ -0,0 +1,342 @@
 +'use client';
++import { useState, useMemo, Fragment } from 'react';
 +import { useRouter } from 'next/navigation';
-+import { useCalendarEvents } from '../lib/useCalendarEvents';
-+import { C } from '../lib/designSystem';
-+import CalendarView from './CalendarView';
++import { ChevronDown, Layers } from 'lucide-react';
++import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList, ResponsiveContainer } from 'recharts';
++import { useFinancialsData } from '../lib/useFinancialsData';
++import { C, NUMFONT, ALL_TYPES } from '../lib/designSystem';
++import { Badge, StatusBadge, ToggleSwitch, ExportButton } from './ui';
++import CrossFilterDonutChart from './CrossFilterDonutChart';
 +
-+export default function CalendarPageView() {
-+  const { mifalim, loading } = useCalendarEvents();
-+  const router = useRouter();
++const FIN_PASTEL_COLORS = ['#A9C7A2', '#E8D2A0', '#E5B3A7'];
 +
++function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
++function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
++
++function getRelevantDates(m) {
++  if (isSingleDateType(m)) { const d = m.date_mode === 'backup' ? m.backup_date : m.event_date; return { start: d, end: d }; }
++  const start = m.date_mode === 'backup' ? m.backup_start_date : m.start_date;
++  const end = m.date_mode === 'backup' ? m.backup_end_date : m.end_date;
++  return { start, end };
++}
++function effectiveStatus(m) {
++  if (m.status === 'בוטל' || m.status === 'הסתיים') return m.status;
++  const today = new Date(); today.setHours(0, 0, 0, 0);
++  const { end } = getRelevantDates(m);
++  if (end) { const endD = new Date(end); if (today > endD) return 'ממתין להפקת לקחים'; }
++  if (m.work_start_date) { const wsd = new Date(m.work_start_date); if (today >= wsd) return 'בעבודה'; }
++  return m.status || 'מתוכנן';
++}
++function yearOf(m) { const { start } = getRelevantDates(m); return start ? new Date(start).getFullYear() : null; }
++
++// Custom Y-axis tick: under dir="rtl", SVG text-anchor is direction-relative, so forcing
++// direction:ltr + unicodeBidi:bidi-override makes textAnchor="end" resolve to the visual right.
++function FinYAxisTick({ x, y, payload }) {
 +  return (
-+    <div>
-+      <h1 className="text-2xl font-bold mb-5" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>לוח שנה</h1>
-+      {loading ? (
-+        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
++    <g transform={`translate(${x},${y})`}>
++      <text x={-15} y={0} dy={4} textAnchor="end" fill={C.inkSoft} fontSize="11px" fontFamily="Heebo, sans-serif" style={{ direction: 'ltr', unicodeBidi: 'bidi-override' }}>
++        {Number(payload.value).toLocaleString('he-IL')}
++      </text>
++    </g>
++  );
++}
++
++function FinKPIBlock({ label, value, tone, lines, bordered }) {
++  const toneColor = tone === 'good' ? C.greenGood : tone === 'rust' ? C.rust : C.forestDark;
++  return (
++    <div className="flex-1 min-w-[160px] px-5 py-4" style={{ borderLeft: bordered ? `1px solid ${C.line}` : 'none' }}>
++      <div className="text-[11px] font-semibold mb-1.5" style={{ color: C.inkSoft }}>{label}</div>
++      {lines ? (
++        <div className="flex flex-col gap-0.5">
++          {lines.map((l, i) => <div key={i} className="text-sm font-medium" style={{ ...NUMFONT, color: C.inkSoft }}>{l}</div>)}
++        </div>
 +      ) : (
-+        <CalendarView mifalim={mifalim} onOpen={id => router.push(`/mifal/${id}`)} />
++        <div className="text-2xl font-bold" style={{ ...NUMFONT, color: toneColor }}>{value}</div>
 +      )}
 +    </div>
 +  );
 +}
-diff --git a/mifalim-app/components/CalendarView.js b/mifalim-app/components/CalendarView.js
-new file mode 100644
-index 0000000..ffe6c1c
---- /dev/null
-+++ b/mifalim-app/components/CalendarView.js
-@@ -0,0 +1,102 @@
-+'use client';
-+import { useState } from 'react';
-+import { ChevronRight, ChevronLeft } from 'lucide-react';
-+import { C, NUMFONT, HOLIDAYS } from '../lib/designSystem';
 +
-+const HEB_WEEKDAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
-+
-+function toDateOnly(d) { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; }
-+function diffDays(a, b) { return Math.round((toDateOnly(b) - toDateOnly(a)) / 86400000); }
-+function toISO(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
-+function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
-+
-+function buildEvents(mifalim) {
-+  const events = [];
-+  mifalim.forEach(m => {
-+    const single = isSingleDateType(m);
-+    const origStart = single ? m.event_date : m.start_date;
-+    const origEnd = single ? m.event_date : m.end_date;
-+    const tone = m.type === 'preparation' ? 'preparation' : 'original';
-+    if (origStart) events.push({ mifalId: m.id, label: m.name, tone, start: new Date(origStart), end: new Date(origEnd || origStart) });
-+    const backStart = single ? m.backup_date : m.backup_start_date;
-+    const backEnd = single ? m.backup_date : m.backup_end_date;
-+    if (backStart) events.push({ mifalId: m.id, label: `${m.name} (מועד ב')`, tone: 'backup', start: new Date(backStart), end: new Date(backEnd || backStart) });
-+    (m.occurrences || []).forEach(occ => {
-+      if (!occ.start_date) return;
-+      events.push({ mifalId: m.id, label: `${occ.name} (${m.name})`, tone: 'occurrence', start: new Date(occ.start_date), end: new Date(occ.end_date || occ.start_date) });
++/* ============================== EXPENSE-TYPE BI ANALYTICS ============================== */
++function buildExpenseRecords(scopedMifalim) {
++  const records = [];
++  scopedMifalim.forEach(m => (m.expenseRows || []).forEach(e => {
++    records.push({
++      id: `${m.id}_${e.expense_name}_${e.supplier}_${e.quantity}_${e.unit_price}`,
++      mifalId: m.id, mifalName: m.name,
++      expense_type: e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג',
++      supplier: e.supplier && e.supplier.trim() ? e.supplier.trim() : 'לא צוין',
++      expense_name: e.expense_name || '',
++      total: (Number(e.quantity) || 0) * (Number(e.unit_price) || 0),
 +    });
++  }));
++  return records;
++}
++function buildExpenseTypeChartData(records) {
++  const totals = {};
++  records.forEach(r => { totals[r.expense_type] = (totals[r.expense_type] || 0) + r.total; });
++  return Object.entries(totals).filter(([, v]) => v > 0).map(([name, value]) => ({ key: name, name, value }));
++}
++// Top-5 suppliers by total cost (optionally scoped to selected expense types), rest bucketed into "אחר".
++function buildTopSuppliersData(records, typeFilters) {
++  const source = typeFilters.length === 0 ? records : records.filter(r => typeFilters.includes(r.expense_type));
++  const totals = {};
++  source.forEach(r => { totals[r.supplier] = (totals[r.supplier] || 0) + r.total; });
++  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
++  const top5 = sorted.slice(0, 5).map(([name, value]) => ({ name, value, isOther: false }));
++  const restSum = sorted.slice(5).reduce((s, [, v]) => s + v, 0);
++  return restSum > 0 ? [...top5, { name: 'אחר', value: restSum, isOther: true }] : top5;
++}
++// 3-level hierarchy: expense type -> supplier -> individual mif'al transactions.
++function buildExpenseHierarchy(records) {
++  const byType = {};
++  records.forEach(r => {
++    byType[r.expense_type] = byType[r.expense_type] || { key: r.expense_type, total: 0, suppliers: {} };
++    byType[r.expense_type].total += r.total;
++    const sup = byType[r.expense_type].suppliers;
++    sup[r.supplier] = sup[r.supplier] || { key: r.supplier, total: 0, transactions: [] };
++    sup[r.supplier].total += r.total;
++    sup[r.supplier].transactions.push(r);
 +  });
-+  return events;
++  return Object.values(byType)
++    .map(t => ({ ...t, suppliers: Object.values(t.suppliers).sort((a, b) => b.total - a.total) }))
++    .sort((a, b) => b.total - a.total);
 +}
 +
-+function WeekRow({ days, events, onOpen, isLast }) {
-+  const weekStart = days[0].date;
-+  const weekEvents = events.map(ev => {
-+    const s = Math.max(0, diffDays(weekStart, ev.start));
-+    const e = Math.min(6, diffDays(weekStart, ev.end));
-+    return { ...ev, s, e };
-+  }).filter(ev => diffDays(weekStart, ev.end) >= 0 && diffDays(weekStart, ev.start) <= 6);
-+  const lanes = [];
-+  weekEvents.forEach(ev => { let li = lanes.findIndex(lane => lane.every(o => ev.s > o.e || ev.e < o.s)); if (li === -1) { li = lanes.length; lanes.push([]); } lanes[li].push(ev); ev.lane = li; });
-+  const maxLanes = Math.max(1, lanes.length);
++function TopSuppliersBarChart({ rows, scopeLabel }) {
 +  return (
-+    <div style={{ borderBottom: isLast ? 'none' : `1px solid ${C.line}` }}>
-+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: `26px repeat(${maxLanes},20px)`, gap: 1, padding: 2, background: C.line }}>
-+        {days.map((d, i) => (
-+          <div key={i} style={{ gridColumn: i + 1, gridRow: 1, opacity: d.inMonth ? 1 : 0.35, paddingRight: 3, background: C.surface }}>
-+            <div className="text-xs font-semibold" style={NUMFONT}>{d.date.getDate()}</div>
-+            {d.holiday && <div className="text-[9px] truncate" style={{ color: C.ochre }}>{d.holiday}</div>}
-+          </div>
-+        ))}
-+        {weekEvents.map((ev, idx) => (
-+          <button key={idx} onClick={() => onOpen(ev.mifalId)} title={ev.label}
-+            style={{ gridColumn: `${ev.s + 1} / ${ev.e + 2}`, gridRow: ev.lane + 2, background: ev.tone === 'original' ? C.forest : ev.tone === 'backup' ? C.ochre : ev.tone === 'preparation' ? C.linkBlue : C.steel, color: '#fff', fontSize: 10, borderRadius: 3, padding: '0 5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', textAlign: 'right' }}>
-+            {ev.label}
-+          </button>
-+        ))}
-+        {Array.from({ length: maxLanes * 7 }).map((_, idx) => {
-+          const row = Math.floor(idx / 7) + 2, col = (idx % 7) + 1;
-+          const occupied = weekEvents.some(ev => ev.lane + 2 === row && col >= ev.s + 1 && col <= ev.e + 1);
-+          return occupied ? null : <div key={`f${idx}`} style={{ gridColumn: col, gridRow: row, background: C.surface }} />;
-+        })}
-+      </div>
++    <div className="rounded-2xl p-5" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
++      <h4 className="text-sm font-bold mb-1" style={{ color: C.forestDark, fontFamily: 'Rubik, sans-serif' }}>ספקים מובילים{scopeLabel ? ` — ${scopeLabel}` : ''}</h4>
++      <p className="text-[11px] mb-3" style={{ color: C.inkSoft }}>5 הספקים המובילים לפי עלות (וכל השאר תחת "אחר")</p>
++      {rows.length === 0 ? (
++        <div className="flex items-center justify-center text-sm rounded-xl" style={{ height: 200, color: C.inkSoft, background: C.paper }}>אין נתוני הוצאות להצגה</div>
++      ) : (
++        <ResponsiveContainer width="100%" height={280}>
++          <BarChart data={rows} margin={{ bottom: rows.length > 4 ? 55 : 25, top: 20, left: 15, right: 10 }}>
++            <CartesianGrid vertical={false} stroke={C.line} strokeDasharray="3 3" />
++            <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Heebo', fill: C.inkSoft }} interval={0} angle={rows.length > 4 ? -25 : 0} textAnchor={rows.length > 4 ? 'end' : 'middle'} height={rows.length > 4 ? 55 : 30} />
++            <YAxis width={85} tick={<FinYAxisTick />} axisLine={{ stroke: C.line }} tickLine={false} />
++            <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={350} animationEasing="ease-out">
++              {rows.map((r, i) => <Cell key={i} fill={r.isOther ? C.sage : FIN_PASTEL_COLORS[i % FIN_PASTEL_COLORS.length]} />)}
++              <LabelList dataKey="value" position="top" formatter={v => v.toLocaleString('he-IL')} style={{ fontFamily: 'Heebo', fontWeight: 700, fontSize: 11, fill: C.forestDark }} />
++            </Bar>
++          </BarChart>
++        </ResponsiveContainer>
++      )}
 +    </div>
 +  );
 +}
 +
-+// Shared, single source of truth for both the master Calendar page and any contextual calendar view.
-+export default function CalendarView({ mifalim, onOpen, cursor: controlledCursor, setCursor: controlledSetCursor }) {
-+  const [innerCursor, setInnerCursor] = useState(new Date());
-+  const cursor = controlledCursor || innerCursor;
-+  const setCursor = controlledSetCursor || setInnerCursor;
++function ExpenseDrillDownTable({ hierarchy, onOpenMifal }) {
++  const [openTypes, setOpenTypes] = useState({});
++  const [openSuppliers, setOpenSuppliers] = useState({});
++  function toggleType(key) { setOpenTypes(s => ({ ...s, [key]: !s[key] })); }
++  function toggleSupplier(key) { setOpenSuppliers(s => ({ ...s, [key]: !s[key] })); }
++  if (hierarchy.length === 0) return <div className="text-center py-10 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין נתוני הוצאות להצגה</div>;
++  return (
++    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
++      <table className="w-full text-sm border-collapse">
++        <thead><tr style={{ background: '#E3E4D6' }}>{['שם', 'סה"כ עלות'].map(h => <th key={h} className="text-right px-4 py-2.5 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>)}</tr></thead>
++        <tbody>
++          {hierarchy.map(t => {
++            const typeOpen = !!openTypes[t.key];
++            return (
++              <Fragment key={t.key}>
++                <tr style={{ background: C.steelSoft, borderTop: `1px solid ${C.line}` }}>
++                  <td className="px-4 py-2.5 font-bold">
++                    <button onClick={() => toggleType(t.key)} className="flex items-center gap-1.5" style={{ color: C.forestDark }}>
++                      <ChevronDown size={14} style={{ transform: typeOpen ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }} />
++                      {t.key}
++                    </button>
++                  </td>
++                  <td className="px-4 py-2.5 font-bold" style={{ ...NUMFONT, color: C.forestDark }}>{money(t.total)}</td>
++                </tr>
++                {typeOpen && t.suppliers.map(s => {
++                  const supKey = `${t.key}::${s.key}`;
++                  const supOpen = !!openSuppliers[supKey];
++                  return (
++                    <Fragment key={supKey}>
++                      <tr style={{ background: C.ochreSoft, borderTop: `1px solid ${C.line}` }}>
++                        <td className="px-4 py-2 font-semibold" style={{ paddingRight: 34 }}>
++                          <button onClick={() => toggleSupplier(supKey)} className="flex items-center gap-1.5" style={{ color: '#6B4C16' }}>
++                            <ChevronDown size={13} style={{ transform: supOpen ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }} />
++                            {s.key}
++                          </button>
++                        </td>
++                        <td className="px-4 py-2 font-semibold" style={{ ...NUMFONT, color: '#6B4C16' }}>{money(s.total)}</td>
++                      </tr>
++                      {supOpen && s.transactions.map((tr, i) => (
++                        <tr key={tr.id + i} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
++                          <td className="px-4 py-2 text-sm" style={{ paddingRight: 58 }}>
++                            <button onClick={() => onOpenMifal(tr.mifalId)} className="hover:underline" style={{ color: C.forestDark }}>{tr.mifalName}</button>
++                            <span className="text-xs" style={{ color: C.inkSoft }}> — {tr.expense_name}</span>
++                          </td>
++                          <td className="px-4 py-2 text-sm" style={NUMFONT}>{money(tr.total)}</td>
++                        </tr>
++                      ))}
++                    </Fragment>
++                  );
++                })}
++              </Fragment>
++            );
++          })}
++        </tbody>
++      </table>
++    </div>
++  );
++}
 +
-+  const year = cursor.getFullYear(), month = cursor.getMonth();
-+  const firstOfMonth = new Date(year, month, 1);
-+  const gridStart = new Date(firstOfMonth); gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-+  const allDays = [];
-+  for (let i = 0; i < 42; i++) { const d = new Date(gridStart); d.setDate(d.getDate() + i); allDays.push({ date: d, inMonth: d.getMonth() === month, holiday: HOLIDAYS[toISO(d)] }); }
-+  const weeks = []; for (let i = 0; i < 6; i++) weeks.push(allDays.slice(i * 7, i * 7 + 7));
-+  const events = buildEvents(mifalim);
++/* ============================== ANNUAL FINANCIALS (with mega-project accordion rows) ============================== */
++export default function FinancialsPageView() {
++  const { mifalim, megaProjects, loading } = useFinancialsData();
++  const router = useRouter();
++  const onOpen = id => router.push(`/mifal/${id}`);
++  const onOpenMega = id => router.push(`/mega/${id}`);
++
++  const [viewMode, setViewMode] = useState('by_mifal'); // 'by_mifal' | 'by_expense_type'
++  const [timeScope, setTimeScope] = useState('current'); // 'current' | 'all'
++  const [expandedMega, setExpandedMega] = useState({});
++  const [expenseTypeFilters, setExpenseTypeFilters] = useState([]);
++
++  const years = useMemo(() => Array.from(new Set(mifalim.map(yearOf).filter(Boolean))).sort(), [mifalim]);
++  const thisRealYear = new Date().getFullYear();
++  const currentYear = years.includes(thisRealYear) ? thisRealYear : (years[years.length - 1] || null);
++
++  const scopedMifalim = timeScope === 'current' ? mifalim.filter(m => yearOf(m) === currentYear) : mifalim.filter(m => yearOf(m) != null);
++  const scopedIds = new Set(scopedMifalim.map(m => m.id));
++
++  const totalIncome = scopedMifalim.reduce((s, m) => s + m.totalIncome, 0);
++  const totalExpectedIncome = scopedMifalim.reduce((s, m) => s + m.totalExpectedIncome, 0);
++  const totalExpenses = scopedMifalim.reduce((s, m) => s + m.totalExpenses, 0);
++  const totalBalance = totalIncome - totalExpenses;
++  const totalExpectedBalance = totalExpectedIncome - totalExpenses;
++  const chartData = [{ name: 'הכנסה בפועל', value: totalIncome }, { name: 'הכנסה צפויה', value: totalExpectedIncome }, { name: 'הוצאות', value: totalExpenses }];
++
++  const megaRows = megaProjects.map(mp => ({ mp, children: mifalim.filter(m => mp.linked_mifal_ids.includes(m.id) && scopedIds.has(m.id)) })).filter(r => r.children.length > 0);
++  const linkedScopedIds = new Set(megaRows.flatMap(r => r.children.map(c => c.id)));
++  const standaloneScoped = scopedMifalim.filter(m => !linkedScopedIds.has(m.id));
++
++  function toggleMega(id) { setExpandedMega(e => ({ ...e, [id]: !e[id] })); }
++  function toggleExpenseType(key) { setExpenseTypeFilters(f => (f.includes(key) ? f.filter(k => k !== key) : [...f, key])); }
++
++  const expenseRecords = useMemo(() => buildExpenseRecords(scopedMifalim), [scopedMifalim]);
++  const expenseTypeChartData = useMemo(() => buildExpenseTypeChartData(expenseRecords), [expenseRecords]);
++  const supplierChartRows = useMemo(() => buildTopSuppliersData(expenseRecords, expenseTypeFilters), [expenseRecords, expenseTypeFilters]);
++  const expenseHierarchy = useMemo(() => buildExpenseHierarchy(expenseTypeFilters.length === 0 ? expenseRecords : expenseRecords.filter(r => expenseTypeFilters.includes(r.expense_type))), [expenseRecords, expenseTypeFilters]);
++  const supplierScopeLabel = expenseTypeFilters.length === 0 ? '' : expenseTypeFilters.length === 1 ? expenseTypeFilters[0] : `${expenseTypeFilters.length} קטגוריות`;
++
++  const timeScopeLabel = timeScope === 'current' ? (currentYear ? `שנת ${currentYear}` : '') : 'כל השנים';
++
++  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
 +
 +  return (
 +    <div>
-+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-+        <div className="flex items-center gap-2">
-+          <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="p-2 rounded-lg" style={{ border: `1px solid ${C.line}` }}><ChevronRight size={16} /></button>
-+          <span className="text-sm font-semibold w-32 text-center" style={{ color: C.forestDark }}>{cursor.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}</span>
-+          <button onClick={() => setCursor(new Date(year, month + 1, 1))} className="p-2 rounded-lg" style={{ border: `1px solid ${C.line}` }}><ChevronLeft size={16} /></button>
-+        </div>
-+        <div className="flex gap-3 text-xs flex-wrap" style={{ color: C.inkSoft }}>
-+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.forest }} />מועד מקורי</span>
-+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.ochre }} />מועד ב'</span>
-+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.steel }} />מופע</span>
-+          <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.linkBlue }} />הכנת מדריכים</span>
-+        </div>
++      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
++        <h1 className="text-2xl font-bold" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>סיכום יתרות שנתי</h1>
++        {viewMode === 'by_mifal' && scopedMifalim.length > 0 && (
++          <ExportButton
++            rows={scopedMifalim}
++            filename="יתרות.xlsx"
++            columns={[{ key: 'name', label: 'שם' }, { key: 'type', label: 'סוג', value: m => ALL_TYPES[m.type].label }, { key: 'balance', label: 'יתרה', value: m => m.balance }, { key: 'expectedBalance', label: 'יתרה צפויה', value: m => m.expectedBalance }]}
++          />
++        )}
 +      </div>
-+      <div className="grid grid-cols-7 gap-0 rounded-t-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, borderBottom: 'none' }}>{HEB_WEEKDAYS.map(w => <div key={w} className="text-center text-xs font-bold py-1.5" style={{ color: '#fff', background: C.forest }}>{w}</div>)}</div>
-+      <div className="rounded-b-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+        {weeks.map((week, i) => <WeekRow key={i} days={week} events={events} onOpen={onOpen} isLast={i === weeks.length - 1} />)}
++
++      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
++        <ToggleSwitch value={viewMode} onChange={setViewMode} rightValue="by_mifal" rightLabel="לפי מפעלים" leftValue="by_expense_type" leftLabel="לפי סוגי הוצאות" />
++        <ToggleSwitch value={timeScope} onChange={setTimeScope} rightValue="current" rightLabel="שנה נוכחית" leftValue="all" leftLabel="מכל השנים" />
 +      </div>
++
++      {years.length === 0 ? (
++        <div className="text-center py-16 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין מספיק נתוני תאריכים לחישוב פילוח</div>
++      ) : viewMode === 'by_mifal' ? (
++        <>
++          <div className="rounded-2xl mb-5 overflow-hidden" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
++            <div className="flex flex-wrap" style={{ borderBottom: `1px solid ${C.line}` }}>
++              <FinKPIBlock label="יתרה מתוכננת" value={money(totalExpectedBalance)} tone={totalExpectedBalance >= 0 ? 'good' : 'rust'} bordered />
++              <FinKPIBlock label="יתרה בפועל" value={money(totalBalance)} tone={totalBalance >= 0 ? 'good' : 'rust'} bordered />
++              <FinKPIBlock label='סה"כ הכנסות' lines={[`מתוכנן: ${money(totalExpectedIncome)}`, `בפועל: ${money(totalIncome)}`]} bordered />
++              <FinKPIBlock label='סה"כ הוצאות' lines={[`מתוכנן: ${money(totalExpenses)}`, `בפועל: ${money(totalExpenses)}`]} />
++            </div>
++            <div className="p-4">
++              <ResponsiveContainer width="100%" height={280}>
++                <BarChart data={chartData} margin={{ bottom: 10, top: 20, left: 38, right: 10 }}>
++                  <CartesianGrid vertical={false} stroke={C.line} strokeDasharray="3 3" />
++                  <XAxis dataKey="name" tick={{ fontSize: 12, fontFamily: 'Heebo', fill: C.inkSoft }} axisLine={{ stroke: C.line }} tickLine={false} />
++                  <YAxis width={85} tick={<FinYAxisTick />} axisLine={{ stroke: C.line }} tickLine={false} />
++                  <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={400} animationEasing="ease-out">
++                    {chartData.map((_, i) => <Cell key={i} fill={FIN_PASTEL_COLORS[i]} />)}
++                    <LabelList dataKey="value" position="top" formatter={v => v.toLocaleString('he-IL')} style={{ fontFamily: 'Heebo', fontWeight: 700, fontSize: 12, fill: C.forestDark }} />
++                  </Bar>
++                </BarChart>
++              </ResponsiveContainer>
++            </div>
++          </div>
++          <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>מפעלים — {timeScopeLabel}</h3>
++          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
++            <table className="w-full text-sm border-collapse">
++              <thead><tr style={{ background: '#E3E4D6' }}>{[...(timeScope === 'all' ? ['שם', 'סוג', 'שנה', 'סטטוס', 'יתרה', 'יתרה צפויה'] : ['שם', 'סוג', 'סטטוס', 'יתרה', 'יתרה צפויה'])].map(h => <th key={h} className="text-right px-4 py-2.5 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>)}</tr></thead>
++              <tbody>
++                {megaRows.map(({ mp, children }) => {
++                  const isOpen = !!expandedMega[mp.id];
++                  const ownBal = mp.ownIncome - mp.ownExpenses;
++                  const collapsedBal = ownBal + children.reduce((s, m) => s + m.balance, 0);
++                  const collapsedExpBal = ownBal + children.reduce((s, m) => s + m.expectedBalance, 0);
++                  return (
++                    <Fragment key={mp.id}>
++                      <tr style={{ background: C.steelSoft, borderTop: `1px solid ${C.line}` }}>
++                        <td className="px-4 py-2.5 font-bold">
++                          <button onClick={() => toggleMega(mp.id)} className="flex items-center gap-1.5" style={{ color: C.forestDark }}>
++                            <ChevronDown size={14} style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }} />
++                            <Layers size={13} style={{ color: C.steel }} />
++                            <span onClick={e => { e.stopPropagation(); onOpenMega(mp.id); }} className="hover:underline">{mp.name}</span>
++                          </button>
++                        </td>
++                        <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>פרויקט על</td>
++                        {timeScope === 'all' && <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>—</td>}
++                        <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>—</td>
++                        <td className="px-4 py-2.5"><Badge tone={(isOpen ? ownBal : collapsedBal) >= 0 ? 'good' : 'rust'}>{money(isOpen ? ownBal : collapsedBal)}</Badge></td>
++                        <td className="px-4 py-2.5"><Badge tone={(isOpen ? ownBal : collapsedExpBal) >= 0 ? 'good' : 'rust'}>{money(isOpen ? ownBal : collapsedExpBal)}</Badge></td>
++                      </tr>
++                      {isOpen && children.map((m, i) => (
++                        <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
++                          <td className="px-4 py-2.5 font-semibold" style={{ paddingRight: 34 }}><button onClick={() => onOpen(m.id)} className="hover:underline" style={{ color: C.forestDark }}>{m.name}</button></td>
++                          <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{ALL_TYPES[m.type].label}</td>
++                          {timeScope === 'all' && <td className="px-4 py-2.5 text-xs" style={NUMFONT}>{yearOf(m) || '—'}</td>}
++                          <td className="px-4 py-2.5"><StatusBadge status={effectiveStatus(m)} /></td>
++                          <td className="px-4 py-2.5"><Badge tone={m.balance >= 0 ? 'good' : 'rust'}>{money(m.balance)}</Badge></td>
++                          <td className="px-4 py-2.5"><Badge tone={m.expectedBalance >= 0 ? 'good' : 'rust'}>{money(m.expectedBalance)}</Badge></td>
++                        </tr>
++                      ))}
++                    </Fragment>
++                  );
++                })}
++                {standaloneScoped.map((m, i) => (
++                  <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
++                    <td className="px-4 py-2.5 font-semibold"><button onClick={() => onOpen(m.id)} className="hover:underline" style={{ color: C.forestDark }}>{m.name}</button></td>
++                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{ALL_TYPES[m.type].label}</td>
++                    {timeScope === 'all' && <td className="px-4 py-2.5 text-xs" style={NUMFONT}>{yearOf(m) || '—'}</td>}
++                    <td className="px-4 py-2.5"><StatusBadge status={effectiveStatus(m)} /></td>
++                    <td className="px-4 py-2.5"><Badge tone={m.balance >= 0 ? 'good' : 'rust'}>{money(m.balance)}</Badge></td>
++                    <td className="px-4 py-2.5"><Badge tone={m.expectedBalance >= 0 ? 'good' : 'rust'}>{money(m.expectedBalance)}</Badge></td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++          <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>מפעלים המשויכים לפרויקט על מוצגים מקוננים תחתיו בלבד ואינם מופיעים שוב כשורה עצמאית.</p>
++        </>
++      ) : (
++        <>
++          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
++            <CrossFilterDonutChart title="הוצאות לפי סוג" unitLabel="סכום" data={expenseTypeChartData} selected={expenseTypeFilters} onToggle={toggleExpenseType} valueFormatter={money} />
++            <TopSuppliersBarChart rows={supplierChartRows} scopeLabel={supplierScopeLabel} />
++          </div>
++          <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>פירוט הוצאות היררכי — סוג ← ספק ← מפעל</h3>
++          <ExpenseDrillDownTable hierarchy={expenseHierarchy} onOpenMifal={onOpen} />
++          <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>תצוגה זו כוללת הוצאות ברמת המפעל בלבד (לא כולל הוצאות מאקרו ישירות של פרויקטי על, שאינן משויכות למפעל ספציפי).</p>
++        </>
++      )}
 +    </div>
 +  );
 +}
 diff --git a/mifalim-app/components/TopNav.js b/mifalim-app/components/TopNav.js
-index f94aae1..c19b967 100644
+index c19b967..fa79940 100644
 --- a/mifalim-app/components/TopNav.js
 +++ b/mifalim-app/components/TopNav.js
 @@ -1,7 +1,7 @@
  'use client';
  import Link from 'next/link';
  import { usePathname } from 'next/navigation';
--import { TableIcon, ListChecks, Layers, Lock } from 'lucide-react';
-+import { TableIcon, ListChecks, Layers, Lock, CalendarDays } from 'lucide-react';
+-import { TableIcon, ListChecks, Layers, Lock, CalendarDays } from 'lucide-react';
++import { TableIcon, ListChecks, Layers, Lock, CalendarDays, Wallet } from 'lucide-react';
  import { C } from '../lib/designSystem';
  import SignOutButton from './SignOutButton';
  
-@@ -10,7 +10,7 @@ import SignOutButton from './SignOutButton';
- const NAV_ITEMS = [
+@@ -11,7 +11,7 @@ const NAV_ITEMS = [
    { key: 'all', label: 'כל המפעלים', icon: TableIcon, href: '/' },
    { key: 'tasks', label: 'משימות מכלל המפעלים', icon: ListChecks, href: '/tasks' },
--  { key: 'calendar', label: 'לוח שנה', href: null },
-+  { key: 'calendar', label: 'לוח שנה', icon: CalendarDays, href: '/calendar' },
-   { key: 'financials', label: 'סיכום יתרות שנתי', href: null },
+   { key: 'calendar', label: 'לוח שנה', icon: CalendarDays, href: '/calendar' },
+-  { key: 'financials', label: 'סיכום יתרות שנתי', href: null },
++  { key: 'financials', label: 'סיכום יתרות שנתי', icon: Wallet, href: '/financials' },
    { key: 'mega', label: 'פרויקטי על', icon: Layers, href: '/mega' },
  ];
-diff --git a/mifalim-app/lib/designSystem.js b/mifalim-app/lib/designSystem.js
-index 17085aa..ea3eff2 100644
---- a/mifalim-app/lib/designSystem.js
-+++ b/mifalim-app/lib/designSystem.js
-@@ -34,6 +34,12 @@ export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre',
- export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
- export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
  
-+export const HOLIDAYS = {
-+  '2026-03-03': 'פורים', '2026-04-02': 'פסח (א׳)', '2026-04-09': 'פסח (אחרון)', '2026-05-22': 'שבועות',
-+  '2026-07-23': "תשעה באב", '2026-09-12': 'ראש השנה', '2026-09-13': 'ראש השנה (ב׳)', '2026-09-21': 'יום כיפור',
-+  '2026-09-26': 'סוכות', '2026-10-03': 'שמיני עצרת', '2026-10-04': 'שמחת תורה', '2026-12-04': 'חנוכה (נר א׳)', '2026-12-12': 'חנוכה (נר אחרון)',
-+};
-+
- export const ALL_TYPES = {
-   day_trip: { label: 'טיול חד יומי', icon: Compass },
-   multi_day: { label: 'טיול רב יומי / מחנה', icon: Tent },
-diff --git a/mifalim-app/lib/useCalendarEvents.js b/mifalim-app/lib/useCalendarEvents.js
+diff --git a/mifalim-app/lib/useFinancialsData.js b/mifalim-app/lib/useFinancialsData.js
 new file mode 100644
-index 0000000..c2fd7e2
+index 0000000..9987843
 --- /dev/null
-+++ b/mifalim-app/lib/useCalendarEvents.js
-@@ -0,0 +1,32 @@
++++ b/mifalim-app/lib/useFinancialsData.js
+@@ -0,0 +1,77 @@
 +'use client';
 +import { useState, useEffect, useCallback } from 'react';
 +import { createClient } from './supabaseClient';
 +
-+// Master calendar reads from the same mifalim + occurrences data as everywhere else in the
-+// app — this hook just fetches both in bulk and nests each mifal's occurrences client-side,
-+// so CalendarView's buildEvents() can stay identical to the original's in-memory version.
-+export function useCalendarEvents() {
++// Bulk-fetches everything the annual financials page needs (mifalim, pricing tiers, income,
++// expenses, mega projects + their links) in one round-trip per table, then folds it into
++// per-mifal / per-mega-project totals client-side — same "cheap aggregation" approach as
++// useMifalim.js, just wider (it also needs each mifal's raw expense rows for the
++// by-expense-type drill-down, and mega-project-level income/expenses).
++export function useFinancialsData() {
 +  const supabase = createClient();
 +  const [mifalim, setMifalim] = useState([]);
++  const [megaProjects, setMegaProjects] = useState([]);
 +  const [loading, setLoading] = useState(true);
 +
 +  const reload = useCallback(async () => {
 +    setLoading(true);
-+    const [{ data: mifalimData, error: e1 }, { data: occData, error: e2 }] = await Promise.all([
-+      supabase.from('mifalim').select('id, type, name, prep_date_mode, event_date, backup_date, start_date, end_date, backup_start_date, backup_end_date'),
-+      supabase.from('occurrences').select('mifal_id, name, start_date, end_date'),
++    const [
++      { data: mifalimData, error: e1 },
++      { data: tiers, error: e2 },
++      { data: income, error: e3 },
++      { data: expenses, error: e4 },
++      { data: megaProjectsData, error: e5 },
++      { data: links, error: e6 },
++    ] = await Promise.all([
++      supabase.from('mifalim').select('*'),
++      supabase.from('pricing_tiers').select('mifal_id, actual_participants, expected_participants, price_per_participant'),
++      supabase.from('external_income').select('owner_type, owner_id, amount'),
++      supabase.from('expenses').select('owner_type, owner_id, quantity, unit_price, expense_type, supplier, expense_name'),
++      supabase.from('mega_projects').select('*'),
++      supabase.from('mega_project_links').select('mega_project_id, mifal_id'),
 +    ]);
-+    if (e1) console.error('שגיאה בטעינת מפעלים ללוח השנה:', e1);
-+    if (e2) console.error('שגיאה בטעינת מופעים ללוח השנה:', e2);
-+    const withOccurrences = (mifalimData || []).map(m => ({
-+      ...m,
-+      occurrences: (occData || []).filter(o => o.mifal_id === m.id),
-+    }));
-+    setMifalim(withOccurrences);
++    [e1, e2, e3, e4, e5, e6].forEach(e => { if (e) console.error('שגיאה בטעינת נתוני יתרות:', e); });
++
++    const withFinancials = (mifalimData || []).map(m => {
++      const myTiers = (tiers || []).filter(t => t.mifal_id === m.id);
++      const myIncome = (income || []).filter(r => r.owner_type === 'mifal' && r.owner_id === m.id);
++      const myExpenses = (expenses || []).filter(r => r.owner_type === 'mifal' && r.owner_id === m.id);
++
++      const participants = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
++      const expectedParticipants = myTiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
++      const tiersIncome = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
++      const tiersExpectedIncome = myTiers.reduce((s, t) => s + (Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
++      const externalIncome = myIncome.reduce((s, r) => s + (Number(r.amount) || 0), 0);
++      const totalExpenses = myExpenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
++      const totalIncome = tiersIncome + externalIncome;
++      const totalExpectedIncome = tiersExpectedIncome + externalIncome;
++
++      return {
++        ...m,
++        participants, expectedParticipants,
++        totalIncome, totalExpectedIncome, totalExpenses,
++        balance: totalIncome - totalExpenses,
++        expectedBalance: totalExpectedIncome - totalExpenses,
++        expenseRows: myExpenses,
++      };
++    });
++
++    const withLinks = (megaProjectsData || []).map(mp => {
++      const ownIncome = (income || []).filter(r => r.owner_type === 'mega_project' && r.owner_id === mp.id).reduce((s, r) => s + (Number(r.amount) || 0), 0);
++      const ownExpenses = (expenses || []).filter(r => r.owner_type === 'mega_project' && r.owner_id === mp.id).reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
++      return {
++        ...mp,
++        linked_mifal_ids: (links || []).filter(l => l.mega_project_id === mp.id).map(l => l.mifal_id),
++        ownIncome, ownExpenses,
++      };
++    });
++
++    setMifalim(withFinancials);
++    setMegaProjects(withLinks);
 +    setLoading(false);
 +  }, []);
 +
 +  useEffect(() => { reload(); }, [reload]);
 +
-+  return { mifalim, loading };
++  return { mifalim, megaProjects, loading };
 +}

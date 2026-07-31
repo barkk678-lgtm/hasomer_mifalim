@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { TableIcon, ListChecks, Layers, Lock, CalendarDays } from 'lucide-react';
+import { TableIcon, ListChecks, Layers, Lock, CalendarDays, Wallet } from 'lucide-react';
 import { C } from '../lib/designSystem';
 import SignOutButton from './SignOutButton';
 
@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { key: 'all', label: 'כל המפעלים', icon: TableIcon, href: '/' },
   { key: 'tasks', label: 'משימות מכלל המפעלים', icon: ListChecks, href: '/tasks' },
   { key: 'calendar', label: 'לוח שנה', icon: CalendarDays, href: '/calendar' },
-  { key: 'financials', label: 'סיכום יתרות שנתי', href: null },
+  { key: 'financials', label: 'סיכום יתרות שנתי', icon: Wallet, href: '/financials' },
   { key: 'mega', label: 'פרויקטי על', icon: Layers, href: '/mega' },
 ];
 
