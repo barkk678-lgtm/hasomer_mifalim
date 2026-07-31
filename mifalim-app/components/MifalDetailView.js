@@ -11,7 +11,7 @@ import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
 import { C, ALL_TYPES } from '../lib/designSystem';
-import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
+import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid } from './ui';
 
 const UNASSIGNED = '__unassigned__';
 
@@ -125,49 +125,13 @@ function TaskCard({ task, onUpdate, onDelete }) {
   );
 }
 
-function TaskTableRow({ task, onUpdate, onDelete }) {
-  const [name, setName] = useState(task.task_name);
-  const [comments, setComments] = useState(task.comments || '');
-  const [deadline, setDeadline] = useState(task.deadline || '');
-  const u = URGENCY_STYLE[taskUrgency(task)];
-
-  return (
-    <tr style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
-      <td className="px-2 py-1.5"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }} className="w-full bg-transparent outline-none text-sm px-2 py-1" /></td>
-      <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{task.assigned_to || '—'}</td>
-      <td className="px-2 py-1.5"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }} className="bg-transparent outline-none text-xs px-2 py-1" /></td>
-      <td className="px-2 py-1.5"><input value={comments} onChange={e => setComments(e.target.value)} onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }} placeholder="הערות" className="w-full bg-transparent outline-none text-xs px-2 py-1" style={{ color: C.inkSoft }} /></td>
-      <td className="px-4 py-2.5">
-        <button
-          onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })}
-          className="px-2.5 py-1 rounded-full text-xs font-semibold"
-          style={task.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
-        >
-          {task.is_completed ? 'הושלם' : 'פתוח'}
-        </button>
-      </td>
-      <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onDelete(task.id)} title="מחיקה" /></td>
-    </tr>
-  );
-}
-
 function TasksTab({ mifalId }) {
   const { tasks, loading, createTask, updateTask, deleteTask } = useMifalTasks(mifalId);
   const { stakeholders, createStakeholder, deleteStakeholder } = useStakeholders(mifalId);
   const [layout, setLayout] = useState('kanban');
   const [showAll, setShowAll] = useState(false);
   const [stakeholdersOpen, setStakeholdersOpen] = useState(false);
-  const [taskName, setTaskName] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [deadline, setDeadline] = useState('');
   const [dragOverLane, setDragOverLane] = useState(null);
-
-  async function handleAdd(e) {
-    e.preventDefault();
-    if (!taskName.trim()) return;
-    await createTask({ task_name: taskName.trim(), assigned_to: assignedTo, deadline: deadline || null, is_completed: false });
-    setTaskName(''); setAssignedTo(''); setDeadline('');
-  }
 
   const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
   const lanes = [...stakeholders.map(s => ({ id: s.full_name, label: s.full_name || 'ללא שם' })), { id: UNASSIGNED, label: 'לא משויך' }];
@@ -175,6 +139,20 @@ function TasksTab({ mifalId }) {
   function moveTask(taskId, laneId) {
     updateTask(taskId, { assigned_to: laneId === UNASSIGNED ? '' : laneId });
   }
+  function addTaskToLane(laneId) {
+    createTask({ task_name: '', assigned_to: laneId === UNASSIGNED ? '' : laneId, deadline: null, comments: '', is_completed: false });
+  }
+
+  const taskColumns = [
+    { key: 'task_name', label: 'משימה', type: 'text' },
+    stakeholders.length > 0
+      ? { key: 'assigned_to', label: 'אחראי', type: 'select', options: stakeholders.map(s => s.full_name) }
+      : { key: 'assigned_to', label: 'אחראי', type: 'text' },
+    { key: 'deadline', label: 'תאריך יעד', type: 'date' },
+    { key: 'comments', label: 'הערות', type: 'text' },
+    { key: 'is_completed', label: 'סטטוס', type: 'boolean' },
+  ];
+  function emptyTaskDraft() { return { task_name: '', assigned_to: '', deadline: '', comments: '', is_completed: false }; }
 
   return (
     <div>
@@ -194,22 +172,6 @@ function TasksTab({ mifalId }) {
           </div>
         </div>
       </div>
-
-      <Card title="הוספת משימה">
-        <form onSubmit={handleAdd} className="flex flex-wrap gap-2">
-          <TextInput value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="שם המשימה" className="flex-1 min-w-[160px]" />
-          {stakeholders.length > 0 ? (
-            <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} className="rounded-md px-3 py-2 text-sm" style={{ border: `1px solid ${C.line}` }}>
-              <option value="">לא משויך</option>
-              {stakeholders.map(s => <option key={s.id} value={s.full_name}>{s.full_name}</option>)}
-            </select>
-          ) : (
-            <TextInput value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="אחראי" className="w-40" />
-          )}
-          <TextInput type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="w-40" />
-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-        </form>
-      </Card>
 
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
@@ -231,7 +193,10 @@ function TasksTab({ mifalId }) {
                   className="w-64 shrink-0 rounded-xl p-2.5"
                   style={{ background: dragOverLane === lane.id ? '#F5EEDC' : C.paper, border: `1px solid ${C.line}` }}
                 >
-                  <div className="text-xs font-bold mb-2 px-1" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></div>
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-xs font-bold" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></span>
+                    <button onClick={() => addTaskToLane(lane.id)} title="הוסף משימה"><Plus size={14} style={{ color: C.forestLight }} /></button>
+                  </div>
                   <div className="flex flex-col gap-2">
                     {laneTasks.map(t => <TaskCard key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
                   </div>
@@ -242,22 +207,14 @@ function TasksTab({ mifalId }) {
         )
       ) : (
         <Card>
-          {visible.length === 0 ? (
-            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות להצגה.</p>
-          ) : (
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr style={{ background: '#E3E4D6' }}>
-                  {['משימה', 'אחראי', 'תאריך יעד', 'הערות', 'סטטוס', ''].map(h => (
-                    <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map(t => <TaskTableRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
-              </tbody>
-            </table>
-          )}
+          <InlineGrid
+            columns={taskColumns}
+            rows={visible}
+            makeEmptyDraft={emptyTaskDraft}
+            onCreate={createTask}
+            onUpdate={updateTask}
+            onDelete={deleteTask}
+          />
         </Card>
       )}
       <div className="flex flex-wrap gap-3 mt-3 text-[11px]" style={{ color: C.inkSoft }}>
@@ -270,54 +227,30 @@ function TasksTab({ mifalId }) {
 }
 
 /* ============================== OCCURRENCES TAB ============================== */
-function OccurrencesTab({ mifalId }) {
-  const { occurrences, loading, createOccurrence, deleteOccurrence } = useOccurrences(mifalId);
-  const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [notes, setNotes] = useState('');
+const OCCURRENCE_COLUMNS = [
+  { key: 'name', label: 'שם המופע', type: 'text' },
+  { key: 'start_date', label: 'תאריך התחלה', type: 'date' },
+  { key: 'end_date', label: 'תאריך סיום', type: 'date' },
+  { key: 'notes', label: 'הערות', type: 'text' },
+];
+function emptyOccurrenceDraft() { return { name: '', start_date: '', end_date: '', notes: '' }; }
 
-  async function handleAdd(e) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    await createOccurrence({ name: name.trim(), start_date: startDate || null, end_date: endDate || null, notes: notes.trim() });
-    setName(''); setStartDate(''); setEndDate(''); setNotes('');
-  }
+function OccurrencesTab({ mifalId }) {
+  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifalId);
 
   return (
     <Card title="מופעים">
-      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-4">
-        <TextInput value={name} onChange={e => setName(e.target.value)} placeholder="שם המופע" className="flex-1 min-w-[160px]" />
-        <TextInput type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
-        <TextInput type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
-        <TextInput value={notes} onChange={e => setNotes(e.target.value)} placeholder="הערות" className="w-40" />
-        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-      </form>
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-      ) : occurrences.length === 0 ? (
-        <p className="text-sm" style={{ color: C.inkSoft }}>אין מופעים עדיין.</p>
       ) : (
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr style={{ background: '#E3E4D6' }}>
-              {['שם המופע', 'תאריך התחלה', 'תאריך סיום', 'הערות', ''].map(h => (
-                <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {occurrences.map(o => (
-              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td className="px-4 py-2.5">{o.name}</td>
-                <td className="px-4 py-2.5 text-xs">{formatDate(o.start_date)}</td>
-                <td className="px-4 py-2.5 text-xs">{formatDate(o.end_date)}</td>
-                <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{o.notes || '—'}</td>
-                <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteOccurrence(o.id)} title="מחיקה" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <InlineGrid
+          columns={OCCURRENCE_COLUMNS}
+          rows={occurrences}
+          makeEmptyDraft={emptyOccurrenceDraft}
+          onCreate={createOccurrence}
+          onUpdate={updateOccurrence}
+          onDelete={deleteOccurrence}
+        />
       )}
     </Card>
   );
@@ -370,87 +303,58 @@ function FilesTab({ mifalId }) {
 }
 
 /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
+const TIER_COLUMNS = [
+  { key: 'age_group', label: 'קבוצת גיל', type: 'text' },
+  { key: 'price_per_participant', label: 'מחיר למשתתף', type: 'number' },
+  { key: 'expected_participants', label: 'משתתפים צפויים', type: 'number' },
+  { key: 'actual_participants', label: 'משתתפים בפועל', type: 'number' },
+];
+function emptyTierDraft() { return { age_group: '', price_per_participant: '', expected_participants: '', actual_participants: '' }; }
+
 function PricingTiersSection({ mifalId }) {
   const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
-  const [ageGroup, setAgeGroup] = useState('');
-  const [price, setPrice] = useState('');
-  const [expected, setExpected] = useState('');
-  const [actual, setActual] = useState('');
 
-  async function handleAdd(e) {
-    e.preventDefault();
-    if (!ageGroup.trim()) return;
-    await createTier({ age_group: ageGroup.trim(), price_per_participant: Number(price) || 0, expected_participants: Number(expected) || 0, actual_participants: Number(actual) || 0 });
-    setAgeGroup(''); setPrice(''); setExpected(''); setActual('');
-  }
+  if (loading) return <Card title="הכנסה מהרשמה (רמות תמחור)"><p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p></Card>;
 
   return (
     <Card title="הכנסה מהרשמה (רמות תמחור)">
-      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-3">
-        <TextInput value={ageGroup} onChange={e => setAgeGroup(e.target.value)} placeholder="קבוצת גיל" className="flex-1 min-w-[120px]" />
-        <TextInput type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="מחיר למשתתף" className="w-32" />
-        <TextInput type="number" value={expected} onChange={e => setExpected(e.target.value)} placeholder="משתתפים צפויים" className="w-32" />
-        <TextInput type="number" value={actual} onChange={e => setActual(e.target.value)} placeholder="משתתפים בפועל" className="w-32" />
-        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-      </form>
-      {loading ? (
-        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-      ) : tiers.length === 0 ? (
-        <p className="text-sm" style={{ color: C.inkSoft }}>אין רמות תמחור עדיין.</p>
-      ) : (
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr style={{ background: '#E3E4D6' }}>
-              {['קבוצת גיל', 'מחיר למשתתף', 'צפויים', 'בפועל', 'הכנסה צפויה', 'הכנסה בפועל', ''].map(h => (
-                <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tiers.map(t => (
-              <tr key={t.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td className="px-3 py-2">{t.age_group}</td>
-                <td className="px-3 py-2 text-xs">{money(t.price_per_participant)}</td>
-                <td className="px-3 py-2 text-xs">{t.expected_participants}</td>
-                <td className="px-3 py-2 text-xs">{t.actual_participants}</td>
-                <td className="px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{money((Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0))}</td>
-                <td className="px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{money((Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0))}</td>
-                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTier(t.id)} title="מחיקה" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <InlineGrid
+        columns={TIER_COLUMNS}
+        computedColumns={[
+          { key: 'expected', label: 'הכנסה צפויה', compute: t => money((Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0)) },
+          { key: 'actual', label: 'הכנסה בפועל', compute: t => money((Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0)) },
+        ]}
+        rows={tiers}
+        makeEmptyDraft={emptyTierDraft}
+        onCreate={createTier}
+        onUpdate={updateTier}
+        onDelete={deleteTier}
+      />
     </Card>
   );
 }
 
+const INCOME_COLUMNS = [
+  { key: 'source_name', label: 'מקור ההכנסה', type: 'text' },
+  { key: 'amount', label: 'סכום', type: 'number' },
+];
+function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
+
+const EXPENSE_COLUMNS = [
+  { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
+  { key: 'quantity', label: 'כמות', type: 'number' },
+  { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
+];
+function emptyExpenseDraft() { return { expense_name: '', quantity: '', unit_price: '' }; }
+
 function BudgetTab({ mifalId }) {
-  const { income, expenses, loading, addIncome, deleteIncome, addExpense, deleteExpense } = useBudget('mifal', mifalId);
+  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense } = useBudget('mifal', mifalId);
   const { tiers } = usePricingTiers(mifalId);
-  const [incomeSource, setIncomeSource] = useState('');
-  const [incomeAmount, setIncomeAmount] = useState('');
-  const [expenseName, setExpenseName] = useState('');
-  const [expenseQty, setExpenseQty] = useState('');
-  const [expenseUnit, setExpenseUnit] = useState('');
 
   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
   const totalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0) + tiersIncome;
   const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
   const balance = totalIncome - totalExpenses;
-
-  async function handleAddIncome(e) {
-    e.preventDefault();
-    if (!incomeSource.trim()) return;
-    await addIncome({ source_name: incomeSource.trim(), amount: Number(incomeAmount) || 0 });
-    setIncomeSource(''); setIncomeAmount('');
-  }
-  async function handleAddExpense(e) {
-    e.preventDefault();
-    if (!expenseName.trim()) return;
-    await addExpense({ expense_name: expenseName.trim(), quantity: Number(expenseQty) || 0, unit_price: Number(expenseUnit) || 0 });
-    setExpenseName(''); setExpenseQty(''); setExpenseUnit('');
-  }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
 
@@ -474,47 +378,27 @@ function BudgetTab({ mifalId }) {
       <PricingTiersSection mifalId={mifalId} />
 
       <Card title="הכנסות נוספות">
-        <form onSubmit={handleAddIncome} className="flex flex-wrap gap-2 mb-3">
-          <TextInput value={incomeSource} onChange={e => setIncomeSource(e.target.value)} placeholder="מקור ההכנסה" className="flex-1 min-w-[160px]" />
-          <TextInput type="number" value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} placeholder="סכום" className="w-32" />
-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-        </form>
-        {income.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הכנסות נוספות עדיין.</p> : (
-          <table className="w-full text-sm border-collapse">
-            <tbody>
-              {income.map(r => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td className="px-4 py-2">{r.source_name}</td>
-                  <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money(r.amount)}</td>
-                  <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteIncome(r.id)} title="מחיקה" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <InlineGrid
+          columns={INCOME_COLUMNS}
+          computedColumns={[]}
+          rows={income}
+          makeEmptyDraft={emptyIncomeDraft}
+          onCreate={addIncome}
+          onUpdate={updateIncome}
+          onDelete={deleteIncome}
+        />
       </Card>
 
       <Card title="הוצאות">
-        <form onSubmit={handleAddExpense} className="flex flex-wrap gap-2 mb-3">
-          <TextInput value={expenseName} onChange={e => setExpenseName(e.target.value)} placeholder="תיאור ההוצאה" className="flex-1 min-w-[160px]" />
-          <TextInput type="number" value={expenseQty} onChange={e => setExpenseQty(e.target.value)} placeholder="כמות" className="w-24" />
-          <TextInput type="number" value={expenseUnit} onChange={e => setExpenseUnit(e.target.value)} placeholder="מחיר ליחידה" className="w-32" />
-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
-        </form>
-        {expenses.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הוצאות עדיין.</p> : (
-          <table className="w-full text-sm border-collapse">
-            <tbody>
-              {expenses.map(r => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td className="px-4 py-2">{r.expense_name}</td>
-                  <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{r.quantity} × {money(r.unit_price)}</td>
-                  <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0))}</td>
-                  <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteExpense(r.id)} title="מחיקה" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <InlineGrid
+          columns={EXPENSE_COLUMNS}
+          computedColumns={[{ key: 'total', label: 'סה"כ', compute: r => money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0)) }]}
+          rows={expenses}
+          makeEmptyDraft={emptyExpenseDraft}
+          onCreate={addExpense}
+          onUpdate={updateExpense}
+          onDelete={deleteExpense}
+        />
       </Card>
     </div>
   );

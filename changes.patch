@@ -1,645 +1,584 @@
 diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index 2891ac9..e432f02 100644
+index e432f02..fe33d5e 100644
 --- a/mifalim-app/components/MifalDetailView.js
 +++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,7 +1,8 @@
- 'use client';
- import { useState } from 'react';
- import Link from 'next/link';
--import { ArrowRight, Plus, Trash2, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
-+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload } from 'lucide-react';
-+import { MifalModal } from './MifalimList';
- import { useMifal } from '../lib/useMifal';
- import { useMifalTasks } from '../lib/useMifalTasks';
- import { useBudget } from '../lib/useBudget';
-@@ -24,6 +25,26 @@ function money(n) {
-   return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪';
+@@ -11,7 +11,7 @@ import { usePricingTiers } from '../lib/usePricingTiers';
+ import { useOccurrences } from '../lib/useOccurrences';
+ import { useFiles } from '../lib/useFiles';
+ import { C, ALL_TYPES } from '../lib/designSystem';
+-import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal } from './ui';
++import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid } from './ui';
+ 
+ const UNASSIGNED = '__unassigned__';
+ 
+@@ -125,56 +125,34 @@ function TaskCard({ task, onUpdate, onDelete }) {
+   );
  }
  
-+function daysUntil(dateStr) {
-+  if (!dateStr) return null;
-+  const today = new Date(); today.setHours(0, 0, 0, 0);
-+  return Math.round((new Date(dateStr) - today) / 86400000);
-+}
-+function taskUrgency(t) {
-+  if (t.is_completed) return 'done';
-+  const d = daysUntil(t.deadline);
-+  if (d === null) return 'normal';
-+  if (d < 0) return 'overdue';
-+  if (d <= 2) return 'soon';
-+  return 'normal';
-+}
-+const URGENCY_STYLE = {
-+  overdue: { bg: C.rustSoft, border: C.rust },
-+  soon: { bg: C.amberSoft, border: C.amber },
-+  done: { bg: C.greenGoodSoft, border: C.greenGood },
-+  normal: { bg: C.surface, border: C.line },
-+};
-+
- function dateRangeLabel(m) {
-   const single = m.type === 'day_trip';
-   const start = m.date_mode === 'backup' ? (single ? m.backup_date : m.backup_start_date) : (single ? m.event_date : m.start_date);
-@@ -71,10 +92,70 @@ function StakeholdersModal({ open, onClose, stakeholders, onCreate, onDelete })
- }
- 
- /* ============================== TASKS TAB (kanban + table) ============================== */
-+function TaskCard({ task, onUpdate, onDelete }) {
-+  const [name, setName] = useState(task.task_name);
-+  const [comments, setComments] = useState(task.comments || '');
-+  const [deadline, setDeadline] = useState(task.deadline || '');
-+  const u = URGENCY_STYLE[taskUrgency(task)];
-+
-+  return (
-+    <div draggable onDragStart={e => e.dataTransfer.setData('text/plain', task.id)} className="rounded-lg p-2.5 shadow-sm cursor-grab relative" style={{ background: u.bg, border: `1px solid ${u.border}` }}>
-+      <button onClick={() => onDelete(task.id)} className="absolute top-1.5 left-1.5" style={{ color: C.inkSoft }}><Trash2 size={12} /></button>
-+      <input
-+        value={name} onChange={e => setName(e.target.value)}
-+        onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }}
-+        className="w-full text-sm font-semibold bg-transparent outline-none mb-1 pl-4"
-+      />
-+      <input
-+        value={comments} onChange={e => setComments(e.target.value)}
-+        onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }}
-+        placeholder="הערות" className="w-full text-[11px] bg-transparent outline-none mb-1" style={{ color: C.inkSoft }}
-+      />
-+      <div className="flex items-center justify-between">
-+        <input
-+          type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
-+          onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }}
-+          className="text-[11px] bg-transparent outline-none"
-+        />
-+        <button onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })} className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={task.is_completed ? { background: C.greenGood, color: '#fff' } : { background: '#fff', color: C.inkSoft, border: `1px solid ${C.line}` }}>
-+          {task.is_completed ? 'הושלם' : 'פתוח'}
-+        </button>
-+      </div>
-+    </div>
-+  );
-+}
-+
-+function TaskTableRow({ task, onUpdate, onDelete }) {
-+  const [name, setName] = useState(task.task_name);
-+  const [comments, setComments] = useState(task.comments || '');
-+  const [deadline, setDeadline] = useState(task.deadline || '');
-+  const u = URGENCY_STYLE[taskUrgency(task)];
-+
-+  return (
-+    <tr style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
-+      <td className="px-2 py-1.5"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }} className="w-full bg-transparent outline-none text-sm px-2 py-1" /></td>
-+      <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{task.assigned_to || '—'}</td>
-+      <td className="px-2 py-1.5"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }} className="bg-transparent outline-none text-xs px-2 py-1" /></td>
-+      <td className="px-2 py-1.5"><input value={comments} onChange={e => setComments(e.target.value)} onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }} placeholder="הערות" className="w-full bg-transparent outline-none text-xs px-2 py-1" style={{ color: C.inkSoft }} /></td>
-+      <td className="px-4 py-2.5">
-+        <button
-+          onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })}
-+          className="px-2.5 py-1 rounded-full text-xs font-semibold"
-+          style={task.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
-+        >
-+          {task.is_completed ? 'הושלם' : 'פתוח'}
-+        </button>
-+      </td>
-+      <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onDelete(task.id)} title="מחיקה" /></td>
-+    </tr>
-+  );
-+}
-+
+-function TaskTableRow({ task, onUpdate, onDelete }) {
+-  const [name, setName] = useState(task.task_name);
+-  const [comments, setComments] = useState(task.comments || '');
+-  const [deadline, setDeadline] = useState(task.deadline || '');
+-  const u = URGENCY_STYLE[taskUrgency(task)];
+-
+-  return (
+-    <tr style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
+-      <td className="px-2 py-1.5"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name !== task.task_name) onUpdate(task.id, { task_name: name }); }} className="w-full bg-transparent outline-none text-sm px-2 py-1" /></td>
+-      <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{task.assigned_to || '—'}</td>
+-      <td className="px-2 py-1.5"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} onBlur={() => { if (deadline !== (task.deadline || '')) onUpdate(task.id, { deadline: deadline || null }); }} className="bg-transparent outline-none text-xs px-2 py-1" /></td>
+-      <td className="px-2 py-1.5"><input value={comments} onChange={e => setComments(e.target.value)} onBlur={() => { if (comments !== (task.comments || '')) onUpdate(task.id, { comments }); }} placeholder="הערות" className="w-full bg-transparent outline-none text-xs px-2 py-1" style={{ color: C.inkSoft }} /></td>
+-      <td className="px-4 py-2.5">
+-        <button
+-          onClick={() => onUpdate(task.id, { is_completed: !task.is_completed })}
+-          className="px-2.5 py-1 rounded-full text-xs font-semibold"
+-          style={task.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
+-        >
+-          {task.is_completed ? 'הושלם' : 'פתוח'}
+-        </button>
+-      </td>
+-      <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onDelete(task.id)} title="מחיקה" /></td>
+-    </tr>
+-  );
+-}
+-
  function TasksTab({ mifalId }) {
    const { tasks, loading, createTask, updateTask, deleteTask } = useMifalTasks(mifalId);
    const { stakeholders, createStakeholder, deleteStakeholder } = useStakeholders(mifalId);
    const [layout, setLayout] = useState('kanban');
-+  const [showAll, setShowAll] = useState(false);
+   const [showAll, setShowAll] = useState(false);
    const [stakeholdersOpen, setStakeholdersOpen] = useState(false);
-   const [taskName, setTaskName] = useState('');
-   const [assignedTo, setAssignedTo] = useState('');
-@@ -88,6 +169,7 @@ function TasksTab({ mifalId }) {
-     setTaskName(''); setAssignedTo(''); setDeadline('');
-   }
+-  const [taskName, setTaskName] = useState('');
+-  const [assignedTo, setAssignedTo] = useState('');
+-  const [deadline, setDeadline] = useState('');
+   const [dragOverLane, setDragOverLane] = useState(null);
  
-+  const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
+-  async function handleAdd(e) {
+-    e.preventDefault();
+-    if (!taskName.trim()) return;
+-    await createTask({ task_name: taskName.trim(), assigned_to: assignedTo, deadline: deadline || null, is_completed: false });
+-    setTaskName(''); setAssignedTo(''); setDeadline('');
+-  }
+-
+   const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
    const lanes = [...stakeholders.map(s => ({ id: s.full_name, label: s.full_name || 'ללא שם' })), { id: UNASSIGNED, label: 'לא משויך' }];
  
    function moveTask(taskId, laneId) {
-@@ -102,9 +184,14 @@ function TasksTab({ mifalId }) {
-         <button onClick={() => setStakeholdersOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: C.forest, color: '#fff' }}>
-           <UserPlus size={13} /> בעלי התפקידים במפעל ({stakeholders.length})
-         </button>
--        <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
--          <button onClick={() => setLayout('kanban')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'kanban' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><LayoutGrid size={13} /> קנבן</button>
--          <button onClick={() => setLayout('table')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'table' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><TableIcon size={13} /> טבלה</button>
-+        <div className="flex items-center gap-2">
-+          <button onClick={() => setShowAll(s => !s)} className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
-+            {showAll ? 'הצג משימות פתוחות בלבד' : 'הצג את כל המשימות'}
-+          </button>
-+          <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+            <button onClick={() => setLayout('kanban')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'kanban' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><LayoutGrid size={13} /> קנבן</button>
-+            <button onClick={() => setLayout('table')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold" style={layout === 'table' ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft }}><TableIcon size={13} /> טבלה</button>
-+          </div>
+     updateTask(taskId, { assigned_to: laneId === UNASSIGNED ? '' : laneId });
+   }
++  function addTaskToLane(laneId) {
++    createTask({ task_name: '', assigned_to: laneId === UNASSIGNED ? '' : laneId, deadline: null, comments: '', is_completed: false });
++  }
++
++  const taskColumns = [
++    { key: 'task_name', label: 'משימה', type: 'text' },
++    stakeholders.length > 0
++      ? { key: 'assigned_to', label: 'אחראי', type: 'select', options: stakeholders.map(s => s.full_name) }
++      : { key: 'assigned_to', label: 'אחראי', type: 'text' },
++    { key: 'deadline', label: 'תאריך יעד', type: 'date' },
++    { key: 'comments', label: 'הערות', type: 'text' },
++    { key: 'is_completed', label: 'סטטוס', type: 'boolean' },
++  ];
++  function emptyTaskDraft() { return { task_name: '', assigned_to: '', deadline: '', comments: '', is_completed: false }; }
+ 
+   return (
+     <div>
+@@ -195,22 +173,6 @@ function TasksTab({ mifalId }) {
          </div>
        </div>
  
-@@ -134,7 +221,7 @@ function TasksTab({ mifalId }) {
-         ) : (
-           <div className="flex gap-3 overflow-x-auto pb-2">
-             {lanes.map(lane => {
--              const laneTasks = tasks.filter(t => (t.assigned_to || '') === (lane.id === UNASSIGNED ? '' : lane.id));
-+              const laneTasks = visible.filter(t => (t.assigned_to || '') === (lane.id === UNASSIGNED ? '' : lane.id));
-               return (
-                 <div
-                   key={lane.id}
-@@ -146,24 +233,7 @@ function TasksTab({ mifalId }) {
+-      <Card title="הוספת משימה">
+-        <form onSubmit={handleAdd} className="flex flex-wrap gap-2">
+-          <TextInput value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="שם המשימה" className="flex-1 min-w-[160px]" />
+-          {stakeholders.length > 0 ? (
+-            <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} className="rounded-md px-3 py-2 text-sm" style={{ border: `1px solid ${C.line}` }}>
+-              <option value="">לא משויך</option>
+-              {stakeholders.map(s => <option key={s.id} value={s.full_name}>{s.full_name}</option>)}
+-            </select>
+-          ) : (
+-            <TextInput value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="אחראי" className="w-40" />
+-          )}
+-          <TextInput type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="w-40" />
+-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+-        </form>
+-      </Card>
+-
+       {loading ? (
+         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+       ) : layout === 'kanban' ? (
+@@ -231,7 +193,10 @@ function TasksTab({ mifalId }) {
+                   className="w-64 shrink-0 rounded-xl p-2.5"
+                   style={{ background: dragOverLane === lane.id ? '#F5EEDC' : C.paper, border: `1px solid ${C.line}` }}
                  >
-                   <div className="text-xs font-bold mb-2 px-1" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></div>
+-                  <div className="text-xs font-bold mb-2 px-1" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></div>
++                  <div className="flex items-center justify-between mb-2 px-1">
++                    <span className="text-xs font-bold" style={{ color: C.forestDark }}>{lane.label} <span className="font-normal" style={{ color: C.inkSoft }}>({laneTasks.length})</span></span>
++                    <button onClick={() => addTaskToLane(lane.id)} title="הוסף משימה"><Plus size={14} style={{ color: C.forestLight }} /></button>
++                  </div>
                    <div className="flex flex-col gap-2">
--                    {laneTasks.map(t => (
--                      <div
--                        key={t.id}
--                        draggable
--                        onDragStart={e => e.dataTransfer.setData('text/plain', t.id)}
--                        className="rounded-lg p-2.5 shadow-sm cursor-grab relative"
--                        style={t.is_completed ? { background: C.greenGoodSoft, border: `1px solid ${C.greenGood}` } : { background: C.surface, border: `1px solid ${C.line}` }}
--                      >
--                        <button onClick={() => deleteTask(t.id)} className="absolute top-1.5 left-1.5" style={{ color: C.inkSoft }}><Trash2 size={12} /></button>
--                        <div className="text-sm font-semibold mb-1 pl-4">{t.task_name}</div>
--                        <div className="flex items-center justify-between">
--                          <span className="text-[11px]" style={{ color: C.inkSoft }}>{formatDate(t.deadline)}</span>
--                          <button onClick={() => updateTask(t.id, { is_completed: !t.is_completed })} className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={t.is_completed ? { background: C.greenGood, color: '#fff' } : { background: '#fff', color: C.inkSoft, border: `1px solid ${C.line}` }}>
--                            {t.is_completed ? 'הושלם' : 'פתוח'}
--                          </button>
--                        </div>
--                      </div>
--                    ))}
-+                    {laneTasks.map(t => <TaskCard key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
+                     {laneTasks.map(t => <TaskCard key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
                    </div>
-                 </div>
-               );
-@@ -172,40 +242,29 @@ function TasksTab({ mifalId }) {
+@@ -242,22 +207,14 @@ function TasksTab({ mifalId }) {
          )
        ) : (
          <Card>
--          {tasks.length === 0 ? (
--            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות עדיין.</p>
-+          {visible.length === 0 ? (
-+            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות להצגה.</p>
-           ) : (
-             <table className="w-full text-sm border-collapse">
-               <thead>
-                 <tr style={{ background: '#E3E4D6' }}>
--                  {['משימה', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map(h => (
-+                  {['משימה', 'אחראי', 'תאריך יעד', 'הערות', 'סטטוס', ''].map(h => (
-                     <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-                   ))}
-                 </tr>
-               </thead>
-               <tbody>
--                {tasks.map(t => (
--                  <tr key={t.id} style={{ borderTop: `1px solid ${C.line}` }}>
--                    <td className="px-4 py-2.5">{t.task_name}</td>
--                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
--                    <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
--                    <td className="px-4 py-2.5">
--                      <button
--                        onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
--                        className="px-2.5 py-1 rounded-full text-xs font-semibold"
--                        style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
--                      >
--                        {t.is_completed ? 'הושלם' : 'פתוח'}
--                      </button>
--                    </td>
--                    <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
--                  </tr>
--                ))}
-+                {visible.map(t => <TaskTableRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
-               </tbody>
-             </table>
-           )}
+-          {visible.length === 0 ? (
+-            <p className="text-sm" style={{ color: C.inkSoft }}>אין משימות להצגה.</p>
+-          ) : (
+-            <table className="w-full text-sm border-collapse">
+-              <thead>
+-                <tr style={{ background: '#E3E4D6' }}>
+-                  {['משימה', 'אחראי', 'תאריך יעד', 'הערות', 'סטטוס', ''].map(h => (
+-                    <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+-                  ))}
+-                </tr>
+-              </thead>
+-              <tbody>
+-                {visible.map(t => <TaskTableRow key={t.id} task={t} onUpdate={updateTask} onDelete={deleteTask} />)}
+-              </tbody>
+-            </table>
+-          )}
++          <InlineGrid
++            columns={taskColumns}
++            rows={visible}
++            makeEmptyDraft={emptyTaskDraft}
++            onCreate={createTask}
++            onUpdate={updateTask}
++            onDelete={deleteTask}
++          />
          </Card>
        )}
-+      <div className="flex flex-wrap gap-3 mt-3 text-[11px]" style={{ color: C.inkSoft }}>
-+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.rust }} />חריגת דד-ליין</span>
-+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.amber }} />יעד תוך יומיים</span>
-+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.greenGood }} />הושלם</span>
-+      </div>
+       <div className="flex flex-wrap gap-3 mt-3 text-[11px]" style={{ color: C.inkSoft }}>
+@@ -270,54 +227,30 @@ function TasksTab({ mifalId }) {
+ }
+ 
+ /* ============================== OCCURRENCES TAB ============================== */
+-function OccurrencesTab({ mifalId }) {
+-  const { occurrences, loading, createOccurrence, deleteOccurrence } = useOccurrences(mifalId);
+-  const [name, setName] = useState('');
+-  const [startDate, setStartDate] = useState('');
+-  const [endDate, setEndDate] = useState('');
+-  const [notes, setNotes] = useState('');
++const OCCURRENCE_COLUMNS = [
++  { key: 'name', label: 'שם המופע', type: 'text' },
++  { key: 'start_date', label: 'תאריך התחלה', type: 'date' },
++  { key: 'end_date', label: 'תאריך סיום', type: 'date' },
++  { key: 'notes', label: 'הערות', type: 'text' },
++];
++function emptyOccurrenceDraft() { return { name: '', start_date: '', end_date: '', notes: '' }; }
+ 
+-  async function handleAdd(e) {
+-    e.preventDefault();
+-    if (!name.trim()) return;
+-    await createOccurrence({ name: name.trim(), start_date: startDate || null, end_date: endDate || null, notes: notes.trim() });
+-    setName(''); setStartDate(''); setEndDate(''); setNotes('');
+-  }
++function OccurrencesTab({ mifalId }) {
++  const { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence } = useOccurrences(mifalId);
+ 
+   return (
+     <Card title="מופעים">
+-      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-4">
+-        <TextInput value={name} onChange={e => setName(e.target.value)} placeholder="שם המופע" className="flex-1 min-w-[160px]" />
+-        <TextInput type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
+-        <TextInput type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
+-        <TextInput value={notes} onChange={e => setNotes(e.target.value)} placeholder="הערות" className="w-40" />
+-        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+-      </form>
+       {loading ? (
+         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+-      ) : occurrences.length === 0 ? (
+-        <p className="text-sm" style={{ color: C.inkSoft }}>אין מופעים עדיין.</p>
+       ) : (
+-        <table className="w-full text-sm border-collapse">
+-          <thead>
+-            <tr style={{ background: '#E3E4D6' }}>
+-              {['שם המופע', 'תאריך התחלה', 'תאריך סיום', 'הערות', ''].map(h => (
+-                <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+-              ))}
+-            </tr>
+-          </thead>
+-          <tbody>
+-            {occurrences.map(o => (
+-              <tr key={o.id} style={{ borderTop: `1px solid ${C.line}` }}>
+-                <td className="px-4 py-2.5">{o.name}</td>
+-                <td className="px-4 py-2.5 text-xs">{formatDate(o.start_date)}</td>
+-                <td className="px-4 py-2.5 text-xs">{formatDate(o.end_date)}</td>
+-                <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{o.notes || '—'}</td>
+-                <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteOccurrence(o.id)} title="מחיקה" /></td>
+-              </tr>
+-            ))}
+-          </tbody>
+-        </table>
++        <InlineGrid
++          columns={OCCURRENCE_COLUMNS}
++          rows={occurrences}
++          makeEmptyDraft={emptyOccurrenceDraft}
++          onCreate={createOccurrence}
++          onUpdate={updateOccurrence}
++          onDelete={deleteOccurrence}
++        />
+       )}
+     </Card>
+   );
+@@ -370,88 +303,59 @@ function FilesTab({ mifalId }) {
+ }
+ 
+ /* ============================== BUDGET TAB (pricing tiers + income + expenses) ============================== */
++const TIER_COLUMNS = [
++  { key: 'age_group', label: 'קבוצת גיל', type: 'text' },
++  { key: 'price_per_participant', label: 'מחיר למשתתף', type: 'number' },
++  { key: 'expected_participants', label: 'משתתפים צפויים', type: 'number' },
++  { key: 'actual_participants', label: 'משתתפים בפועל', type: 'number' },
++];
++function emptyTierDraft() { return { age_group: '', price_per_participant: '', expected_participants: '', actual_participants: '' }; }
++
+ function PricingTiersSection({ mifalId }) {
+   const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
+-  const [ageGroup, setAgeGroup] = useState('');
+-  const [price, setPrice] = useState('');
+-  const [expected, setExpected] = useState('');
+-  const [actual, setActual] = useState('');
+ 
+-  async function handleAdd(e) {
+-    e.preventDefault();
+-    if (!ageGroup.trim()) return;
+-    await createTier({ age_group: ageGroup.trim(), price_per_participant: Number(price) || 0, expected_participants: Number(expected) || 0, actual_participants: Number(actual) || 0 });
+-    setAgeGroup(''); setPrice(''); setExpected(''); setActual('');
+-  }
++  if (loading) return <Card title="הכנסה מהרשמה (רמות תמחור)"><p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p></Card>;
+ 
+   return (
+     <Card title="הכנסה מהרשמה (רמות תמחור)">
+-      <form onSubmit={handleAdd} className="flex flex-wrap gap-2 mb-3">
+-        <TextInput value={ageGroup} onChange={e => setAgeGroup(e.target.value)} placeholder="קבוצת גיל" className="flex-1 min-w-[120px]" />
+-        <TextInput type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="מחיר למשתתף" className="w-32" />
+-        <TextInput type="number" value={expected} onChange={e => setExpected(e.target.value)} placeholder="משתתפים צפויים" className="w-32" />
+-        <TextInput type="number" value={actual} onChange={e => setActual(e.target.value)} placeholder="משתתפים בפועל" className="w-32" />
+-        <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+-      </form>
+-      {loading ? (
+-        <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+-      ) : tiers.length === 0 ? (
+-        <p className="text-sm" style={{ color: C.inkSoft }}>אין רמות תמחור עדיין.</p>
+-      ) : (
+-        <table className="w-full text-sm border-collapse">
+-          <thead>
+-            <tr style={{ background: '#E3E4D6' }}>
+-              {['קבוצת גיל', 'מחיר למשתתף', 'צפויים', 'בפועל', 'הכנסה צפויה', 'הכנסה בפועל', ''].map(h => (
+-                <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+-              ))}
+-            </tr>
+-          </thead>
+-          <tbody>
+-            {tiers.map(t => (
+-              <tr key={t.id} style={{ borderTop: `1px solid ${C.line}` }}>
+-                <td className="px-3 py-2">{t.age_group}</td>
+-                <td className="px-3 py-2 text-xs">{money(t.price_per_participant)}</td>
+-                <td className="px-3 py-2 text-xs">{t.expected_participants}</td>
+-                <td className="px-3 py-2 text-xs">{t.actual_participants}</td>
+-                <td className="px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{money((Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0))}</td>
+-                <td className="px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{money((Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0))}</td>
+-                <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTier(t.id)} title="מחיקה" /></td>
+-              </tr>
+-            ))}
+-          </tbody>
+-        </table>
+-      )}
++      <InlineGrid
++        columns={TIER_COLUMNS}
++        computedColumns={[
++          { key: 'expected', label: 'הכנסה צפויה', compute: t => money((Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0)) },
++          { key: 'actual', label: 'הכנסה בפועל', compute: t => money((Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0)) },
++        ]}
++        rows={tiers}
++        makeEmptyDraft={emptyTierDraft}
++        onCreate={createTier}
++        onUpdate={updateTier}
++        onDelete={deleteTier}
++      />
+     </Card>
+   );
+ }
+ 
++const INCOME_COLUMNS = [
++  { key: 'source_name', label: 'מקור ההכנסה', type: 'text' },
++  { key: 'amount', label: 'סכום', type: 'number' },
++];
++function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
++
++const EXPENSE_COLUMNS = [
++  { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
++  { key: 'quantity', label: 'כמות', type: 'number' },
++  { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
++];
++function emptyExpenseDraft() { return { expense_name: '', quantity: '', unit_price: '' }; }
++
+ function BudgetTab({ mifalId }) {
+-  const { income, expenses, loading, addIncome, deleteIncome, addExpense, deleteExpense } = useBudget('mifal', mifalId);
++  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense } = useBudget('mifal', mifalId);
+   const { tiers } = usePricingTiers(mifalId);
+-  const [incomeSource, setIncomeSource] = useState('');
+-  const [incomeAmount, setIncomeAmount] = useState('');
+-  const [expenseName, setExpenseName] = useState('');
+-  const [expenseQty, setExpenseQty] = useState('');
+-  const [expenseUnit, setExpenseUnit] = useState('');
+ 
+   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
+   const totalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0) + tiersIncome;
+   const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
+   const balance = totalIncome - totalExpenses;
+ 
+-  async function handleAddIncome(e) {
+-    e.preventDefault();
+-    if (!incomeSource.trim()) return;
+-    await addIncome({ source_name: incomeSource.trim(), amount: Number(incomeAmount) || 0 });
+-    setIncomeSource(''); setIncomeAmount('');
+-  }
+-  async function handleAddExpense(e) {
+-    e.preventDefault();
+-    if (!expenseName.trim()) return;
+-    await addExpense({ expense_name: expenseName.trim(), quantity: Number(expenseQty) || 0, unit_price: Number(expenseUnit) || 0 });
+-    setExpenseName(''); setExpenseQty(''); setExpenseUnit('');
+-  }
+-
+   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
+ 
+   return (
+@@ -474,47 +378,27 @@ function BudgetTab({ mifalId }) {
+       <PricingTiersSection mifalId={mifalId} />
+ 
+       <Card title="הכנסות נוספות">
+-        <form onSubmit={handleAddIncome} className="flex flex-wrap gap-2 mb-3">
+-          <TextInput value={incomeSource} onChange={e => setIncomeSource(e.target.value)} placeholder="מקור ההכנסה" className="flex-1 min-w-[160px]" />
+-          <TextInput type="number" value={incomeAmount} onChange={e => setIncomeAmount(e.target.value)} placeholder="סכום" className="w-32" />
+-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+-        </form>
+-        {income.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הכנסות נוספות עדיין.</p> : (
+-          <table className="w-full text-sm border-collapse">
+-            <tbody>
+-              {income.map(r => (
+-                <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
+-                  <td className="px-4 py-2">{r.source_name}</td>
+-                  <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money(r.amount)}</td>
+-                  <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteIncome(r.id)} title="מחיקה" /></td>
+-                </tr>
+-              ))}
+-            </tbody>
+-          </table>
+-        )}
++        <InlineGrid
++          columns={INCOME_COLUMNS}
++          computedColumns={[]}
++          rows={income}
++          makeEmptyDraft={emptyIncomeDraft}
++          onCreate={addIncome}
++          onUpdate={updateIncome}
++          onDelete={deleteIncome}
++        />
+       </Card>
+ 
+       <Card title="הוצאות">
+-        <form onSubmit={handleAddExpense} className="flex flex-wrap gap-2 mb-3">
+-          <TextInput value={expenseName} onChange={e => setExpenseName(e.target.value)} placeholder="תיאור ההוצאה" className="flex-1 min-w-[160px]" />
+-          <TextInput type="number" value={expenseQty} onChange={e => setExpenseQty(e.target.value)} placeholder="כמות" className="w-24" />
+-          <TextInput type="number" value={expenseUnit} onChange={e => setExpenseUnit(e.target.value)} placeholder="מחיר ליחידה" className="w-32" />
+-          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest }}><Plus size={15} /> הוספה</button>
+-        </form>
+-        {expenses.length === 0 ? <p className="text-sm" style={{ color: C.inkSoft }}>אין הוצאות עדיין.</p> : (
+-          <table className="w-full text-sm border-collapse">
+-            <tbody>
+-              {expenses.map(r => (
+-                <tr key={r.id} style={{ borderTop: `1px solid ${C.line}` }}>
+-                  <td className="px-4 py-2">{r.expense_name}</td>
+-                  <td className="px-4 py-2 text-xs" style={{ color: C.inkSoft }}>{r.quantity} × {money(r.unit_price)}</td>
+-                  <td className="px-4 py-2 font-semibold" style={{ color: C.forestDark }}>{money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0))}</td>
+-                  <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteExpense(r.id)} title="מחיקה" /></td>
+-                </tr>
+-              ))}
+-            </tbody>
+-          </table>
+-        )}
++        <InlineGrid
++          columns={EXPENSE_COLUMNS}
++          computedColumns={[{ key: 'total', label: 'סה"כ', compute: r => money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0)) }]}
++          rows={expenses}
++          makeEmptyDraft={emptyExpenseDraft}
++          onCreate={addExpense}
++          onUpdate={updateExpense}
++          onDelete={deleteExpense}
++        />
+       </Card>
      </div>
    );
- }
-@@ -461,34 +520,85 @@ function BudgetTab({ mifalId }) {
-   );
- }
- 
-+function SummaryStat({ label, value, tone }) {
-+  const toneColor = tone === 'good' ? C.greenGood : tone === 'rust' ? C.rust : C.ink;
-+  return (
-+    <div className="rounded-xl p-3.5 flex-1 min-w-[130px]" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-+      <div className="text-[11px] font-semibold mb-1" style={{ color: C.inkSoft }}>{label}</div>
-+      <div className="text-base font-bold" style={{ color: toneColor }}>{value}</div>
-+    </div>
-+  );
-+}
-+
- export default function MifalDetailView({ mifalId }) {
--  const { mifal, loading } = useMifal(mifalId);
-+  const { mifal, loading, updateMifal } = useMifal(mifalId);
-+  const { tiers } = usePricingTiers(mifalId);
-+  const { income, expenses } = useBudget('mifal', mifalId);
-   const [tab, setTab] = useState('tasks');
-+  const [editOpen, setEditOpen] = useState(false);
- 
-   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
-   if (!mifal) return <p className="text-sm" style={{ color: C.rust }}>המפעל לא נמצא.</p>;
- 
-   const def = ALL_TYPES[mifal.type] || {};
-   const Icon = def.icon;
-+  const isPrep = mifal.type === 'preparation';
-+
-+  const expectedParticipants = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
-+  const actualParticipants = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
-+  const extIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-+  const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
-+  const expectedIncome = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0) * (Number(t.price_per_participant) || 0), 0) + extIncome;
-+  const actualIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0) + extIncome;
-+  const expectedBalance = expectedIncome - totalExpenses;
-+  const actualBalance = actualIncome - totalExpenses;
- 
-   return (
-     <div>
-       <Link href="/" className="flex items-center gap-1.5 text-sm font-medium mb-4" style={{ color: C.inkSoft }}><ArrowRight size={15} /> חזרה</Link>
- 
-+      <MifalModal open={editOpen} onClose={() => setEditOpen(false)} existing={mifal} onSave={updateMifal} />
-+
-       <div className="rounded-xl p-5 mb-5" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
--        <div className="flex items-center gap-2 mb-1">
--          {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
--          <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
-+        <div className="flex items-center justify-between mb-1">
-+          <div className="flex items-center gap-2">
-+            {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
-+            <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
-+          </div>
-+          <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
-         </div>
-         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
-         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
-           <InfoField label="בעל תפקיד אחראי" value={mifal.lead_role} />
-+          <InfoField label="רשויות" value={(mifal.target_municipalities || []).join(', ')} />
-+          {!isPrep && <InfoField label="קהל יעד" value={(mifal.target_audience || []).join(', ')} />}
-+          <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
-+          <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
-           <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
-           <InfoField label="תאריכים" value={dateRangeLabel(mifal)} />
-           <InfoField label="מיקום" value={mifal.accommodation} />
-           <InfoField label="מסלולים" value={mifal.routes} />
-           <InfoField label="הערות" value={mifal.comments} />
-         </div>
-+
-+        {!isPrep && (
-+          <div className="flex flex-wrap gap-4 mt-5 pt-4 border-t" style={{ borderColor: C.line }}>
-+            <div className="flex-1 min-w-[280px]">
-+              <div className="text-xs font-bold mb-2 text-center py-1 rounded-md" style={{ color: C.forestDark, background: C.ochreSoft }}>תכנון (צפוי)</div>
-+              <div className="flex gap-2">
-+                <SummaryStat label='סה"כ צפי חניכים' value={expectedParticipants} />
-+                <SummaryStat label="יתרה צפויה" value={money(expectedBalance)} tone={expectedBalance >= 0 ? 'good' : 'rust'} />
-+              </div>
-+            </div>
-+            <div className="flex-1 min-w-[280px]">
-+              <div className="text-xs font-bold mb-2 text-center py-1 rounded-md" style={{ color: C.forestDark, background: C.greenGoodSoft }}>בפועל</div>
-+              <div className="flex gap-2">
-+                <SummaryStat label='סה"כ חניכים בפועל' value={actualParticipants} />
-+                <SummaryStat label="יתרה עדכנית" value={money(actualBalance)} tone={actualBalance >= 0 ? 'good' : 'rust'} />
-+              </div>
-+            </div>
-+          </div>
-+        )}
-       </div>
- 
-       <div className="flex gap-1 mb-5 border-b" style={{ borderColor: C.line }}>
-diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
-index faaf542..f30a854 100644
---- a/mifalim-app/components/MifalimList.js
-+++ b/mifalim-app/components/MifalimList.js
-@@ -3,10 +3,11 @@ import { useState, useMemo } from 'react';
- import Link from 'next/link';
- import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
- import { useMifalim } from '../lib/useMifalim';
--import { C, ALL_TYPES, STATUS_OPTIONS, LEAD_ROLES, AUDIENCE_ROWS, TRIP_TYPES, CAMP_TYPES, SEMINAR_TYPES } from '../lib/designSystem';
--import { Field, TextInput, TextArea, Select, StatusBadge, IconButton, Card, Modal, ActiveScheduleToggle, AudienceBubbleSelect, MunicipalitySelect } from './ui';
-+import { C, ALL_TYPES, STATUS_OPTIONS, ACTIVE_STATUSES, LEAD_ROLES, AUDIENCE_ROWS, TRIP_TYPES, CAMP_TYPES, SEMINAR_TYPES } from '../lib/designSystem';
-+import { Field, TextInput, TextArea, Select, Badge, StatusBadge, IconButton, Card, Modal, ActiveScheduleToggle, AudienceBubbleSelect, MunicipalitySelect, ToggleSwitch, HeaderFilterPopover, ExportButton } from './ui';
- import CrossFilterDonutChart from './CrossFilterDonutChart';
- 
-+function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
- function isSingleDateType(m) { return m.type === 'day_trip'; }
- function dateRangeLabel(m) {
-   const start = m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
-@@ -81,7 +82,7 @@ function MifalForm({ draft, setDraft }) {
-   );
- }
- 
--function MifalModal({ open, onClose, existing, onSave }) {
-+export function MifalModal({ open, onClose, existing, onSave }) {
-   const [step, setStep] = useState(existing ? 'form' : 'type');
-   const [draft, setDraft] = useState(existing || null);
-   const [saving, setSaving] = useState(false);
-@@ -139,33 +140,55 @@ export default function MifalimList() {
-   const { mifalim, loading, createMifal, updateMifal, deleteMifal } = useMifalim();
-   const [createOpen, setCreateOpen] = useState(false);
-   const [editId, setEditId] = useState(null);
-+  const [activeOnly, setActiveOnly] = useState(false);
-   const [typeFilter, setTypeFilter] = useState(null);
-   const [roleFilter, setRoleFilter] = useState(null);
-+  const [nameFilter, setNameFilter] = useState('');
-+  const [statusFilter, setStatusFilter] = useState('all');
-+  const [pRange, setPRange] = useState(['', '']);
-+  const [bRange, setBRange] = useState(['', '']);
-   const [sortKey, setSortKey] = useState(null);
-   const [sortDir, setSortDir] = useState('asc');
-   const editingMifal = mifalim.find(m => m.id === editId);
- 
-+  function passBaseFilters(m) {
-+    if (activeOnly && !ACTIVE_STATUSES.includes(m.status)) return false;
-+    if (statusFilter !== 'all' && m.status !== statusFilter) return false;
-+    if (nameFilter && !(m.name || '').toLowerCase().includes(nameFilter.toLowerCase())) return false;
-+    const p = Number(m.participants) || 0;
-+    if (pRange[0] !== '' && p < Number(pRange[0])) return false;
-+    if (pRange[1] !== '' && p > Number(pRange[1])) return false;
-+    const bal = Number(m.balance) || 0;
-+    if (bRange[0] !== '' && bal < Number(bRange[0])) return false;
-+    if (bRange[1] !== '' && bal > Number(bRange[1])) return false;
-+    return true;
-+  }
-+
-   const typeChartData = useMemo(() => {
--    const src = mifalim.filter(m => !roleFilter || m.lead_role === roleFilter);
-+    const src = mifalim.filter(m => passBaseFilters(m) && (!roleFilter || m.lead_role === roleFilter));
-     return Object.entries(ALL_TYPES).map(([key, def]) => ({ key, name: def.label, value: src.filter(m => m.type === key).length })).filter(t => t.value > 0);
--  }, [mifalim, roleFilter]);
-+  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
- 
-   const roleChartData = useMemo(() => {
--    const src = mifalim.filter(m => !typeFilter || m.type === typeFilter);
-+    const src = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter));
-     const counts = {};
-     src.forEach(m => { const key = m.lead_role || 'לא הוגדר'; counts[key] = (counts[key] || 0) + 1; });
-     return Object.entries(counts).map(([name, value]) => ({ key: name, name, value }));
--  }, [mifalim, typeFilter]);
-+  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
- 
--  const filtered = mifalim.filter(m => (!typeFilter || m.type === typeFilter) && (!roleFilter || m.lead_role === roleFilter));
-+  const filtered = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter) && (!roleFilter || m.lead_role === roleFilter));
-   const sorted = useMemo(() => {
-     if (!sortKey) return filtered;
--    const getVal = m => sortKey === 'type' ? (ALL_TYPES[m.type]?.label || '') : sortKey === 'date' ? dateRangeLabel(m) : m[sortKey] || '';
--    return [...filtered].sort((a, b) => { const cmp = String(getVal(a)).localeCompare(String(getVal(b)), 'he'); return sortDir === 'asc' ? cmp : -cmp; });
-+    const getVal = m => sortKey === 'type' ? (ALL_TYPES[m.type]?.label || '') : sortKey === 'date' ? dateRangeLabel(m) : (sortKey === 'participants' || sortKey === 'balance') ? (Number(m[sortKey]) || 0) : m[sortKey] || '';
-+    return [...filtered].sort((a, b) => {
-+      const av = getVal(a), bv = getVal(b);
-+      const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv), 'he');
-+      return sortDir === 'asc' ? cmp : -cmp;
-+    });
-   }, [filtered, sortKey, sortDir]);
-   function toggleSort(key) { setSortKey(k => { if (k !== key) { setSortDir('asc'); return key; } setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return key; }); }
- 
--  const anyFilter = typeFilter || roleFilter;
-+  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '';
- 
-   return (
-     <div>
-@@ -174,24 +197,39 @@ export default function MifalimList() {
-       <MifalModal open={createOpen} onClose={() => setCreateOpen(false)} existing={null} onSave={createMifal} />
-       <MifalModal open={!!editId} onClose={() => setEditId(null)} existing={editingMifal} onSave={draft => updateMifal(editId, draft)} />
- 
-+      <div className="mb-4 flex items-center gap-3">
-+        <ToggleSwitch value={activeOnly ? 'active' : 'all'} onChange={v => setActiveOnly(v === 'active')} leftLabel="כל המפעלים" rightLabel="מפעלים פעילים" leftValue="all" rightValue="active" />
-+        {anyFilter && (
-+          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
-+        )}
-+      </div>
-+
-       {!loading && mifalim.length > 0 && (
--        <>
--          {anyFilter && (
--            <div className="mb-3">
--              <button onClick={() => { setTypeFilter(null); setRoleFilter(null); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
--            </div>
--          )}
--          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
--            <CrossFilterDonutChart title="התפלגות מפעלים לפי סוג מפעל" unitLabel="כמות מפעלים" data={typeChartData} selected={typeFilter ? [typeFilter] : []} onToggle={key => setTypeFilter(f => f === key ? null : key)} />
--            <CrossFilterDonutChart title="התפלגות מפעלים לפי אחראי" unitLabel="כמות מפעלים" data={roleChartData} selected={roleFilter ? [roleFilter] : []} onToggle={key => setRoleFilter(f => f === key ? null : key)} />
--          </div>
--        </>
-+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-+          <CrossFilterDonutChart title="התפלגות מפעלים לפי סוג מפעל" unitLabel="כמות מפעלים" data={typeChartData} selected={typeFilter ? [typeFilter] : []} onToggle={key => setTypeFilter(f => f === key ? null : key)} />
-+          <CrossFilterDonutChart title="התפלגות מפעלים לפי אחראי" unitLabel="כמות מפעלים" data={roleChartData} selected={roleFilter ? [roleFilter] : []} onToggle={key => setRoleFilter(f => f === key ? null : key)} />
-+        </div>
-       )}
- 
-       <div className="flex items-center justify-between mb-2">
-         <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest }}>
-           <Plus size={16} /> יצירת מפעל חדש
-         </button>
-+        {sorted.length > 0 && (
-+          <ExportButton
-+            rows={sorted}
-+            filename="מפעלים.xlsx"
-+            columns={[
-+              { key: 'name', label: 'שם' },
-+              { key: 'type', label: 'סוג', value: m => ALL_TYPES[m.type]?.label || m.type },
-+              { key: 'lead_role', label: 'אחראי' },
-+              { key: 'date', label: 'תאריכים', value: dateRangeLabel },
-+              { key: 'participants', label: 'משתתפים' },
-+              { key: 'status', label: 'סטטוס' },
-+              { key: 'balance', label: 'יתרה', value: m => money(m.balance) },
-+            ]}
-+          />
-+        )}
-       </div>
- 
-       <Card>
-@@ -208,11 +246,21 @@ export default function MifalimList() {
-               <thead>
-                 <tr style={{ background: C.forest }}>
-                   <th className="w-10"></th>
--                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('name')}>שם המפעל <ArrowUpDown size={11} style={{ opacity: sortKey === 'name' ? 1 : 0.4 }} /></button></th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="שם המפעל" type="text" value={nameFilter} onChange={setNameFilter} sortKey="name" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('type')}>סוג <ArrowUpDown size={11} style={{ opacity: sortKey === 'type' ? 1 : 0.4 }} /></button></th>
-                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('lead_role')}>אחראי <ArrowUpDown size={11} style={{ opacity: sortKey === 'lead_role' ? 1 : 0.4 }} /></button></th>
-                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">תאריכים</th>
--                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('status')}>סטטוס <ArrowUpDown size={11} style={{ opacity: sortKey === 'status' ? 1 : 0.4 }} /></button></th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="משתתפים" type="range" value={pRange} onChange={setPRange} sortKey="participants" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="סטטוס" type="select" value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS.map(s => ({ value: s, label: s }))} sortKey="status" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="יתרה" type="range" value={bRange} onChange={setBRange} sortKey="balance" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-                   <th className="w-10"></th>
-                 </tr>
-               </thead>
-@@ -220,6 +268,7 @@ export default function MifalimList() {
-                 {sorted.map((m, i) => {
-                   const def = ALL_TYPES[m.type] || {};
-                   const Icon = def.icon || Tent;
-+                  const balance = Number(m.balance) || 0;
-                   return (
-                     <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-                       <td className="px-2 py-3 text-center"><IconButton icon={Pencil} title="עריכה" onClick={() => setEditId(m.id)} /></td>
-@@ -229,7 +278,9 @@ export default function MifalimList() {
-                       <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}><Icon size={13} />{def.label || m.type}</span></td>
-                       <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>
-                       <td className="px-4 py-3 text-xs">{dateRangeLabel(m)}</td>
-+                      <td className="px-4 py-3 text-xs">{m.participants || 0}</td>
-                       <td className="px-4 py-3"><StatusBadge status={m.status} /></td>
-+                      <td className="px-4 py-3"><Badge tone={balance >= 0 ? 'good' : 'rust'}>{money(balance)}</Badge></td>
-                       <td className="px-2 py-3 text-center">
-                         <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`למחוק את "${m.name || 'המפעל'}"?`)) deleteMifal(m.id); }} />
-                       </td>
 diff --git a/mifalim-app/components/ui.js b/mifalim-app/components/ui.js
-index 63f1a9c..4552df0 100644
+index 4552df0..8e9590c 100644
 --- a/mifalim-app/components/ui.js
 +++ b/mifalim-app/components/ui.js
-@@ -1,7 +1,8 @@
+@@ -1,6 +1,6 @@
  'use client';
  import { useState, useEffect, useRef } from 'react';
--import { ChevronDown, X, MapPin } from 'lucide-react';
-+import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown } from 'lucide-react';
+-import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown } from 'lucide-react';
++import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2 } from 'lucide-react';
  import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
-+import { exportToExcel } from '../lib/exportExcel';
+ import { exportToExcel } from '../lib/exportExcel';
  
- export function Field({ label, children, hint }) {
-   return (
-@@ -197,3 +198,51 @@ export function MunicipalitySelect({ value, onChange }) {
+@@ -246,3 +246,99 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
      </div>
    );
  }
 +
-+export function ExportButton({ rows, columns, filename }) {
++// Spreadsheet-style editable table: existing rows edit in place (each cell commits onBlur),
++// and a "ghost" row at the bottom becomes a real row (via onCreate) as soon as its first
++// column is filled in and blurred — no separate add-item form.
++function GridCell({ col, value, isGhost, onChange, onCommit }) {
++  const cellStyle = { background: 'transparent', border: 'none', width: '100%', padding: '6px 8px', fontSize: 13, outline: 'none', color: C.ink };
++  const commit = () => onCommit && onCommit();
++  if (col.type === 'select') {
++    return (
++      <select style={cellStyle} value={value || ''} onChange={e => onChange(e.target.value)} onBlur={commit}>
++        <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
++        {col.options.map(o => <option key={o} value={o}>{o}</option>)}
++      </select>
++    );
++  }
++  if (col.type === 'boolean') {
++    return (
++      <button type="button" onClick={() => onChange(!value)} className="mx-2 px-2.5 py-1 rounded-full text-xs font-semibold" style={value ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}>
++        {value ? 'הושלם' : 'פתוח'}
++      </button>
++    );
++  }
++  const type = col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text';
 +  return (
-+    <button onClick={() => exportToExcel(rows, columns, filename)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.greenGoodSoft, color: C.greenGood }}>
-+      <FileSpreadsheet size={13} /> ייצוא לאקסל
-+    </button>
++    <input
++      type={type} style={cellStyle} value={value ?? ''}
++      placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
++      onChange={e => onChange(e.target.value)}
++      onBlur={commit}
++    />
 +  );
 +}
 +
-+// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range'.
-+export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
-+  const [open, setOpen] = useState(false);
-+  const ref = useRef(null);
-+  useEffect(() => {
-+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-+    document.addEventListener('mousedown', h);
-+    return () => document.removeEventListener('mousedown', h);
-+  }, []);
-+  const isActive = type === 'text' ? !!value : type === 'select' ? value !== 'all' : Array.isArray(value) ? (value[0] !== '' || value[1] !== '') : false;
++export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft, onCreate, onUpdate, onDelete }) {
++  const [draft, setDraft] = useState(makeEmptyDraft());
++  const [savingDraft, setSavingDraft] = useState(false);
++
++  function updateCell(idx, key, value) {
++    if (idx === rows.length) {
++      setDraft(d => ({ ...d, [key]: value }));
++    } else {
++      onUpdate(rows[idx].id, { [key]: value });
++    }
++  }
++
++  async function commitGhostIfReady() {
++    const primaryKey = columns[0].key;
++    if (savingDraft) return;
++    if (draft[primaryKey] === undefined || draft[primaryKey] === null || String(draft[primaryKey]).trim() === '') return;
++    setSavingDraft(true);
++    await onCreate(draft);
++    setDraft(makeEmptyDraft());
++    setSavingDraft(false);
++  }
++
++  const display = [...rows, null];
++
 +  return (
-+    <div className="relative inline-flex items-center gap-1" ref={ref}>
-+      {onSort ? (
-+        <button className="flex items-center gap-1" onClick={() => onSort(sortKey)}>{label}<ArrowUpDown size={11} style={{ opacity: activeSortKey === sortKey ? 1 : 0.4 }} /></button>
-+      ) : <span>{label}</span>}
-+      <button onClick={() => setOpen(o => !o)} title="סינון" className="p-0.5 rounded"><Filter size={11} style={{ color: isActive ? C.ochreSoft : 'rgba(255,255,255,0.6)' }} /></button>
-+      {open && (
-+        <div onClick={e => e.stopPropagation()} className="absolute z-30 top-full mt-1 right-0 rounded-lg shadow-lg p-3" style={{ background: C.surface, border: `1px solid ${C.line}`, minWidth: 190 }}>
-+          {type === 'text' && (
-+            <input autoFocus value={value} onChange={e => onChange(e.target.value)} placeholder="הקלד לסינון..." className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-+          )}
-+          {type === 'select' && (
-+            <select value={value} onChange={e => onChange(e.target.value)} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
-+              <option value="all">הכל</option>
-+              {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-+            </select>
-+          )}
-+          {type === 'range' && (
-+            <div className="flex gap-2 items-center">
-+              <input type="number" value={value[0]} onChange={e => onChange([e.target.value, value[1]])} placeholder="מ-" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-+              <span className="text-xs" style={{ color: C.inkSoft }}>עד</span>
-+              <input type="number" value={value[1]} onChange={e => onChange([value[0], e.target.value])} placeholder="עד" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-+            </div>
-+          )}
-+        </div>
-+      )}
++    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
++      <table className="w-full text-sm border-collapse">
++        <thead>
++          <tr style={{ background: C.forest }}>
++            {columns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
++            {computedColumns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
++            <th className="w-10"></th>
++          </tr>
++        </thead>
++        <tbody>
++          {display.map((row, idx) => {
++            const isGhost = row === null;
++            const rowKey = isGhost ? 'ghost-row' : row.id;
++            return (
++              <tr key={rowKey} style={{ background: isGhost ? '#FAFAF3' : (idx % 2 ? '#F7F6EE' : C.surface), borderTop: `1px solid ${C.line}` }}>
++                {columns.map(col => (
++                  <td key={col.key} className="px-1 py-1 align-top">
++                    <GridCell
++                      col={col}
++                      value={isGhost ? draft[col.key] : row[col.key]}
++                      isGhost={isGhost}
++                      onChange={v => updateCell(idx, col.key, v)}
++                      onCommit={isGhost ? commitGhostIfReady : undefined}
++                    />
++                  </td>
++                ))}
++                {computedColumns.map(col => (
++                  <td key={col.key} className="px-3 py-2 text-xs font-semibold align-top" style={{ color: C.forestDark }}>{isGhost ? '' : col.compute(row)}</td>
++                ))}
++                <td className="text-center align-top">{!isGhost && <IconButton icon={Trash2} tone="danger" onClick={() => onDelete(row.id)} title="מחק שורה" />}</td>
++              </tr>
++            );
++          })}
++        </tbody>
++      </table>
 +    </div>
 +  );
 +}
-diff --git a/mifalim-app/lib/designSystem.js b/mifalim-app/lib/designSystem.js
-index 15c138d..2ce939d 100644
---- a/mifalim-app/lib/designSystem.js
-+++ b/mifalim-app/lib/designSystem.js
-@@ -31,6 +31,7 @@ export const SEMINAR_TYPES = ['סמינר פתיחת שנה', 'סמינר התע
+diff --git a/mifalim-app/lib/useBudget.js b/mifalim-app/lib/useBudget.js
+index 22419e8..7f0e17b 100644
+--- a/mifalim-app/lib/useBudget.js
++++ b/mifalim-app/lib/useBudget.js
+@@ -32,6 +32,12 @@ export function useBudget(ownerType, ownerId) {
+     setIncome(prev => [...prev, data]);
+     return data;
+   }
++  async function updateIncome(id, patch) {
++    const { data, error } = await supabase.from('external_income').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון הכנסה:', error); return null; }
++    setIncome(prev => prev.map(r => (r.id === id ? data : r)));
++    return data;
++  }
+   async function deleteIncome(id) {
+     const { error } = await supabase.from('external_income').delete().eq('id', id);
+     if (error) { console.error('שגיאה במחיקת הכנסה:', error); return; }
+@@ -44,11 +50,17 @@ export function useBudget(ownerType, ownerId) {
+     setExpenses(prev => [...prev, data]);
+     return data;
+   }
++  async function updateExpense(id, patch) {
++    const { data, error } = await supabase.from('expenses').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון הוצאה:', error); return null; }
++    setExpenses(prev => prev.map(r => (r.id === id ? data : r)));
++    return data;
++  }
+   async function deleteExpense(id) {
+     const { error } = await supabase.from('expenses').delete().eq('id', id);
+     if (error) { console.error('שגיאה במחיקת הוצאה:', error); return; }
+     setExpenses(prev => prev.filter(r => r.id !== id));
+   }
  
- export const STATUS_OPTIONS = ['מתוכנן', 'בעבודה', 'ממתין להפקת לקחים', 'הסתיים', 'בוטל'];
- export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre', 'ממתין להפקת לקחים': 'amber', 'הסתיים': 'good', 'בוטל': 'rust' };
-+export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
+-  return { income, expenses, loading, addIncome, deleteIncome, addExpense, deleteExpense };
++  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense };
+ }
+diff --git a/mifalim-app/lib/useOccurrences.js b/mifalim-app/lib/useOccurrences.js
+index 7db1d94..93ce5cf 100644
+--- a/mifalim-app/lib/useOccurrences.js
++++ b/mifalim-app/lib/useOccurrences.js
+@@ -25,11 +25,18 @@ export function useOccurrences(mifalId) {
+     return data;
+   }
  
- export const ALL_TYPES = {
-   day_trip: { label: 'טיול חד יומי', icon: Compass },
-diff --git a/mifalim-app/lib/exportExcel.js b/mifalim-app/lib/exportExcel.js
-new file mode 100644
-index 0000000..7ac2331
---- /dev/null
-+++ b/mifalim-app/lib/exportExcel.js
-@@ -0,0 +1,16 @@
-+import * as XLSX from 'xlsx';
++  async function updateOccurrence(id, patch) {
++    const { data, error } = await supabase.from('occurrences').update(patch).eq('id', id).select().single();
++    if (error) { console.error('שגיאה בעדכון מופע:', error); return null; }
++    setOccurrences(prev => prev.map(o => (o.id === id ? data : o)));
++    return data;
++  }
 +
-+// Shared by every "ייצוא לאקסל" button across the app. `columns` is
-+// [{ key, label, value? }] — value(row) overrides reading row[key] directly.
-+export function exportToExcel(rows, columns, filename) {
-+  const data = rows.map(r => {
-+    const obj = {};
-+    columns.forEach(c => { obj[c.label] = c.value ? c.value(r) : r[c.key]; });
-+    return obj;
-+  });
-+  const ws = XLSX.utils.json_to_sheet(data);
-+  const wb = XLSX.utils.book_new();
-+  wb.Workbook = { Views: [{ RTL: true }] };
-+  XLSX.utils.book_append_sheet(wb, ws, 'נתונים');
-+  XLSX.writeFile(wb, filename);
-+}
-diff --git a/mifalim-app/lib/useMifalim.js b/mifalim-app/lib/useMifalim.js
-index 90f4ce9..404c9ac 100644
---- a/mifalim-app/lib/useMifalim.js
-+++ b/mifalim-app/lib/useMifalim.js
-@@ -27,9 +27,24 @@ export function useMifalim() {
- 
-   const reload = useCallback(async () => {
-     setLoading(true);
--    const { data, error } = await supabase.from('mifalim').select('*').order('created_at', { ascending: false });
-+    const [{ data, error }, { data: tiers }, { data: income }, { data: expenses }] = await Promise.all([
-+      supabase.from('mifalim').select('*').order('created_at', { ascending: false }),
-+      supabase.from('pricing_tiers').select('mifal_id, actual_participants, price_per_participant'),
-+      supabase.from('external_income').select('owner_id, amount').eq('owner_type', 'mifal'),
-+      supabase.from('expenses').select('owner_id, quantity, unit_price').eq('owner_type', 'mifal'),
-+    ]);
-     if (error) console.error('שגיאה בטעינת מפעלים:', error);
--    setMifalim(data || []);
-+    // Cheap client-side aggregation (participants + balance) for the list's summary columns —
-+    // one round-trip per underlying table instead of one per mifal.
-+    const withSummary = (data || []).map(m => {
-+      const myTiers = (tiers || []).filter(t => t.mifal_id === m.id);
-+      const participants = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
-+      const tiersIncome = myTiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
-+      const extIncome = (income || []).filter(r => r.owner_id === m.id).reduce((s, r) => s + (Number(r.amount) || 0), 0);
-+      const totalExpenses = (expenses || []).filter(r => r.owner_id === m.id).reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
-+      return { ...m, participants, balance: tiersIncome + extIncome - totalExpenses };
-+    });
-+    setMifalim(withSummary);
-     setLoading(false);
-   }, []);
- 
-@@ -38,14 +53,14 @@ export function useMifalim() {
-   async function createMifal(mifal) {
-     const { data, error } = await supabase.from('mifalim').insert(mifal).select().single();
-     if (error) { console.error('שגיאה ביצירת מפעל:', error); return null; }
--    setMifalim(prev => [data, ...prev]); // same "new items go on top" behavior as the original app
-+    setMifalim(prev => [{ ...data, participants: 0, balance: 0 }, ...prev]); // same "new items go on top" behavior as the original app
-     return data;
+   async function deleteOccurrence(id) {
+     const { error } = await supabase.from('occurrences').delete().eq('id', id);
+     if (error) { console.error('שגיאה במחיקת מופע:', error); return; }
+     setOccurrences(prev => prev.filter(o => o.id !== id));
    }
  
-   async function updateMifal(id, patch) {
-     const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
-     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
--    setMifalim(prev => prev.map(m => (m.id === id ? data : m)));
-+    setMifalim(prev => prev.map(m => (m.id === id ? { ...data, participants: m.participants, balance: m.balance } : m)));
-     return data;
-   }
- 
+-  return { occurrences, loading, createOccurrence, deleteOccurrence };
++  return { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence };
+ }

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown } from 'lucide-react';
+import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2 } from 'lucide-react';
 import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
 import { exportToExcel } from '../lib/exportExcel';
 
@@ -243,6 +243,102 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Spreadsheet-style editable table: existing rows edit in place (each cell commits onBlur),
+// and a "ghost" row at the bottom becomes a real row (via onCreate) as soon as its first
+// column is filled in and blurred — no separate add-item form.
+function GridCell({ col, value, isGhost, onChange, onCommit }) {
+  const cellStyle = { background: 'transparent', border: 'none', width: '100%', padding: '6px 8px', fontSize: 13, outline: 'none', color: C.ink };
+  const commit = () => onCommit && onCommit();
+  if (col.type === 'select') {
+    return (
+      <select style={cellStyle} value={value || ''} onChange={e => onChange(e.target.value)} onBlur={commit}>
+        <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
+        {col.options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+  }
+  if (col.type === 'boolean') {
+    return (
+      <button type="button" onClick={() => onChange(!value)} className="mx-2 px-2.5 py-1 rounded-full text-xs font-semibold" style={value ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}>
+        {value ? 'הושלם' : 'פתוח'}
+      </button>
+    );
+  }
+  const type = col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text';
+  return (
+    <input
+      type={type} style={cellStyle} value={value ?? ''}
+      placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
+      onChange={e => onChange(e.target.value)}
+      onBlur={commit}
+    />
+  );
+}
+
+export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft, onCreate, onUpdate, onDelete }) {
+  const [draft, setDraft] = useState(makeEmptyDraft());
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  function updateCell(idx, key, value) {
+    if (idx === rows.length) {
+      setDraft(d => ({ ...d, [key]: value }));
+    } else {
+      onUpdate(rows[idx].id, { [key]: value });
+    }
+  }
+
+  async function commitGhostIfReady() {
+    const primaryKey = columns[0].key;
+    if (savingDraft) return;
+    if (draft[primaryKey] === undefined || draft[primaryKey] === null || String(draft[primaryKey]).trim() === '') return;
+    setSavingDraft(true);
+    await onCreate(draft);
+    setDraft(makeEmptyDraft());
+    setSavingDraft(false);
+  }
+
+  const display = [...rows, null];
+
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr style={{ background: C.forest }}>
+            {columns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
+            {computedColumns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
+            <th className="w-10"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {display.map((row, idx) => {
+            const isGhost = row === null;
+            const rowKey = isGhost ? 'ghost-row' : row.id;
+            return (
+              <tr key={rowKey} style={{ background: isGhost ? '#FAFAF3' : (idx % 2 ? '#F7F6EE' : C.surface), borderTop: `1px solid ${C.line}` }}>
+                {columns.map(col => (
+                  <td key={col.key} className="px-1 py-1 align-top">
+                    <GridCell
+                      col={col}
+                      value={isGhost ? draft[col.key] : row[col.key]}
+                      isGhost={isGhost}
+                      onChange={v => updateCell(idx, col.key, v)}
+                      onCommit={isGhost ? commitGhostIfReady : undefined}
+                    />
+                  </td>
+                ))}
+                {computedColumns.map(col => (
+                  <td key={col.key} className="px-3 py-2 text-xs font-semibold align-top" style={{ color: C.forestDark }}>{isGhost ? '' : col.compute(row)}</td>
+                ))}
+                <td className="text-center align-top">{!isGhost && <IconButton icon={Trash2} tone="danger" onClick={() => onDelete(row.id)} title="מחק שורה" />}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

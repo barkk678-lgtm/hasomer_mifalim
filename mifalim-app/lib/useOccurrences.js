@@ -25,11 +25,18 @@ export function useOccurrences(mifalId) {
     return data;
   }
 
+  async function updateOccurrence(id, patch) {
+    const { data, error } = await supabase.from('occurrences').update(patch).eq('id', id).select().single();
+    if (error) { console.error('שגיאה בעדכון מופע:', error); return null; }
+    setOccurrences(prev => prev.map(o => (o.id === id ? data : o)));
+    return data;
+  }
+
   async function deleteOccurrence(id) {
     const { error } = await supabase.from('occurrences').delete().eq('id', id);
     if (error) { console.error('שגיאה במחיקת מופע:', error); return; }
     setOccurrences(prev => prev.filter(o => o.id !== id));
   }
 
-  return { occurrences, loading, createOccurrence, deleteOccurrence };
+  return { occurrences, loading, createOccurrence, updateOccurrence, deleteOccurrence };
 }

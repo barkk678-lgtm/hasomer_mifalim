@@ -32,6 +32,12 @@ export function useBudget(ownerType, ownerId) {
     setIncome(prev => [...prev, data]);
     return data;
   }
+  async function updateIncome(id, patch) {
+    const { data, error } = await supabase.from('external_income').update(patch).eq('id', id).select().single();
+    if (error) { console.error('שגיאה בעדכון הכנסה:', error); return null; }
+    setIncome(prev => prev.map(r => (r.id === id ? data : r)));
+    return data;
+  }
   async function deleteIncome(id) {
     const { error } = await supabase.from('external_income').delete().eq('id', id);
     if (error) { console.error('שגיאה במחיקת הכנסה:', error); return; }
@@ -44,11 +50,17 @@ export function useBudget(ownerType, ownerId) {
     setExpenses(prev => [...prev, data]);
     return data;
   }
+  async function updateExpense(id, patch) {
+    const { data, error } = await supabase.from('expenses').update(patch).eq('id', id).select().single();
+    if (error) { console.error('שגיאה בעדכון הוצאה:', error); return null; }
+    setExpenses(prev => prev.map(r => (r.id === id ? data : r)));
+    return data;
+  }
   async function deleteExpense(id) {
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (error) { console.error('שגיאה במחיקת הוצאה:', error); return; }
     setExpenses(prev => prev.filter(r => r.id !== id));
   }
 
-  return { income, expenses, loading, addIncome, deleteIncome, addExpense, deleteExpense };
+  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense };
 }
