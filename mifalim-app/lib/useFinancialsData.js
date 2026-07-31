@@ -26,7 +26,7 @@ export function useFinancialsData() {
       supabase.from('mifalim').select('*'),
       supabase.from('pricing_tiers').select('mifal_id, actual_participants, expected_participants, price_per_participant'),
       supabase.from('external_income').select('owner_type, owner_id, amount'),
-      supabase.from('expenses').select('owner_type, owner_id, quantity, unit_price, expense_type, supplier, expense_name'),
+      supabase.from('expenses').select('owner_type, owner_id, quantity, unit_price, expense_type, expense_name, suppliers(name)'),
       supabase.from('mega_projects').select('*'),
       supabase.from('mega_project_links').select('mega_project_id, mifal_id'),
     ]);

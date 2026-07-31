@@ -33,6 +33,7 @@ export const STATUS_OPTIONS = ['מתוכנן', 'בעבודה', 'ממתין לה�
 export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre', 'ממתין להפקת לקחים': 'amber', 'הסתיים': 'good', 'בוטל': 'rust' };
 export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
 export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
+export const EXPENSE_TYPES = ['מזון', 'הסעות', 'אבטחה ורפואה', 'ציוד משרדי', 'ציוד מחנאי', 'דפוס וטקסטיל', 'רכב', 'השכרת מקום'];
 
 export const HOLIDAYS = {
   '2026-03-03': 'פורים', '2026-04-02': 'פסח (א׳)', '2026-04-09': 'פסח (אחרון)', '2026-05-22': 'שבועות',

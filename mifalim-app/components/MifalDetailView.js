@@ -11,7 +11,7 @@ import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
 import { usePreparations } from '../lib/usePreparations';
-import { C, ALL_TYPES, FILE_CATEGORIES } from '../lib/designSystem';
+import { C, ALL_TYPES, FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
 
 const UNASSIGNED = '__unassigned__';
@@ -496,10 +496,12 @@ function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
 
 const EXPENSE_COLUMNS = [
   { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
+  { key: 'expense_type', label: 'סוג הוצאה', type: 'select', options: EXPENSE_TYPES },
+  { key: 'supplier_name', label: 'ספק', type: 'text' },
   { key: 'quantity', label: 'כמות', type: 'number' },
   { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
 ];
-function emptyExpenseDraft() { return { expense_name: '', quantity: '', unit_price: '' }; }
+function emptyExpenseDraft() { return { expense_name: '', expense_type: '', supplier_name: '', quantity: '', unit_price: '' }; }
 
 function BudgetTab({ mifalId }) {
   const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense } = useBudget('mifal', mifalId);

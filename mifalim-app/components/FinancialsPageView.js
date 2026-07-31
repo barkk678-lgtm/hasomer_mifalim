@@ -65,7 +65,7 @@ function buildExpenseRecords(scopedMifalim) {
       id: `${m.id}_${e.expense_name}_${e.supplier}_${e.quantity}_${e.unit_price}`,
       mifalId: m.id, mifalName: m.name,
       expense_type: e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג',
-      supplier: e.supplier && e.supplier.trim() ? e.supplier.trim() : 'לא צוין',
+      supplier: e.suppliers?.name && e.suppliers.name.trim() ? e.suppliers.name.trim() : 'לא צוין',
       expense_name: e.expense_name || '',
       total: (Number(e.quantity) || 0) * (Number(e.unit_price) || 0),
     });

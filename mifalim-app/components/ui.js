@@ -247,15 +247,35 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
   );
 }
 
-// Spreadsheet-style editable table: existing rows edit in place (each cell commits onBlur),
-// and a "ghost" row at the bottom becomes a real row (via onCreate) as soon as its first
-// column is filled in and blurred — no separate add-item form.
+// Spreadsheet-style editable table: existing rows edit in place, and a "ghost" row at the
+// bottom becomes a real row (via onCreate) once you tab/click out of it with its first column
+// filled in — no separate add-item form.
+//
+// For an EXISTING row, `value` only advances once the server confirms the write (it comes
+// straight from `rows`, which is the hook's post-round-trip state) — so each cell buffers
+// keystrokes in local state and only calls onCommit on blur (immediately for select/boolean,
+// which are single discrete actions rather than typing). Without that buffer, a controlled
+// input whose value prop lags behind a network round-trip visibly reverts mid-keystroke.
+//
+// For the GHOST row, `value` IS the parent's local `draft` state (no network round-trip),
+// so it can drive the input directly with no local buffer — the thing that needs guarding
+// there is different: committing must wait until focus leaves the row entirely (handled by
+// the wrapping <tr onBlur>), not fire on every individual cell's blur while tabbing across
+// the row, or the row gets created half-filled and the rest of what you type is discarded.
 function GridCell({ col, value, isGhost, onChange, onCommit }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  const display = isGhost ? value : local;
+
   const cellStyle = { background: 'transparent', border: 'none', width: '100%', padding: '6px 8px', fontSize: 13, outline: 'none', color: C.ink };
-  const commit = () => onCommit && onCommit();
+
   if (col.type === 'select') {
     return (
-      <select style={cellStyle} value={value || ''} onChange={e => onChange(e.target.value)} onBlur={commit}>
+      <select
+        style={cellStyle}
+        value={display || ''}
+        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
+      >
         <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
         {col.options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -263,18 +283,23 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
   }
   if (col.type === 'boolean') {
     return (
-      <button type="button" onClick={() => onChange(!value)} className="mx-2 px-2.5 py-1 rounded-full text-xs font-semibold" style={value ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}>
-        {value ? 'הושלם' : 'פתוח'}
+      <button
+        type="button"
+        onClick={() => { const v = !display; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
+        className="mx-2 px-2.5 py-1 rounded-full text-xs font-semibold"
+        style={display ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
+      >
+        {display ? 'הושלם' : 'פתוח'}
       </button>
     );
   }
   const type = col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text';
   return (
     <input
-      type={type} style={cellStyle} value={value ?? ''}
+      type={type} style={cellStyle} value={display ?? ''}
       placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
-      onChange={e => onChange(e.target.value)}
-      onBlur={commit}
+      onChange={e => { const v = e.target.value; if (isGhost) { onChange(v); } else { setLocal(v); onChange(v); } }}
+      onBlur={() => { if (!isGhost) onCommit && onCommit(local); }}
     />
   );
 }
@@ -283,22 +308,19 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
   const [draft, setDraft] = useState(makeEmptyDraft());
   const [savingDraft, setSavingDraft] = useState(false);
 
-  function updateCell(idx, key, value) {
-    if (idx === rows.length) {
-      setDraft(d => ({ ...d, [key]: value }));
-    } else {
-      onUpdate(rows[idx].id, { [key]: value });
-    }
+  function updateGhostDraft(key, value) {
+    setDraft(d => ({ ...d, [key]: value }));
   }
 
-  async function commitGhostIfReady() {
+  function commitGhostIfReady() {
     const primaryKey = columns[0].key;
     if (savingDraft) return;
-    if (draft[primaryKey] === undefined || draft[primaryKey] === null || String(draft[primaryKey]).trim() === '') return;
-    setSavingDraft(true);
-    await onCreate(draft);
-    setDraft(makeEmptyDraft());
-    setSavingDraft(false);
+    setDraft(current => {
+      if (current[primaryKey] === undefined || current[primaryKey] === null || String(current[primaryKey]).trim() === '') return current;
+      setSavingDraft(true);
+      Promise.resolve(onCreate(current)).finally(() => setSavingDraft(false));
+      return makeEmptyDraft();
+    });
   }
 
   const display = [...rows, null];
@@ -318,15 +340,19 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
             const isGhost = row === null;
             const rowKey = isGhost ? 'ghost-row' : row.id;
             return (
-              <tr key={rowKey} style={{ background: isGhost ? '#FAFAF3' : (idx % 2 ? '#F7F6EE' : C.surface), borderTop: `1px solid ${C.line}` }}>
+              <tr
+                key={rowKey}
+                onBlur={isGhost ? (e => { if (!e.currentTarget.contains(e.relatedTarget)) commitGhostIfReady(); }) : undefined}
+                style={{ background: isGhost ? '#FAFAF3' : (idx % 2 ? '#F7F6EE' : C.surface), borderTop: `1px solid ${C.line}` }}
+              >
                 {columns.map(col => (
                   <td key={col.key} className="px-1 py-1 align-top">
                     <GridCell
                       col={col}
                       value={isGhost ? draft[col.key] : row[col.key]}
                       isGhost={isGhost}
-                      onChange={v => updateCell(idx, col.key, v)}
-                      onCommit={isGhost ? commitGhostIfReady : undefined}
+                      onChange={v => (isGhost ? updateGhostDraft(col.key, v) : undefined)}
+                      onCommit={!isGhost ? v => onUpdate(row.id, { [col.key]: v }) : undefined}
                     />
                   </td>
                 ))}
