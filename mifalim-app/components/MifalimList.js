@@ -1,82 +1,127 @@
 'use client';
 import { useState } from 'react';
+import { Plus, Trash2, Compass, Tent, Users, Wrench } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
+import { C, NUMFONT, STATUS_OPTIONS, STATUS_TONE } from '../lib/designSystem';
+import { Field, TextInput, Select, Badge, IconButton, Card, Modal } from './ui';
 
-const MIFAL_TYPES = {
-  day_trip: 'טיול חד יומי',
-  multi_day: 'טיול רב יומי / מחנה',
-  seminar: 'סמינר',
-  preparation: 'הכנת מדריכים',
+const ALL_TYPES = {
+  day_trip: { label: 'טיול חד יומי', icon: Compass },
+  multi_day: { label: 'טיול רב יומי / מחנה', icon: Tent },
+  seminar: { label: 'סמינר', icon: Users },
+  preparation: { label: 'הכנת מדריכים', icon: Wrench },
 };
 
-const boxStyle = { border: '1px solid #DAD8C7', borderRadius: 10, padding: 20, marginTop: 24 };
-const inputStyle = { padding: 8, fontSize: 14, border: '1px solid #ccc', borderRadius: 6 };
-const buttonStyle = { padding: '8px 16px', fontSize: 14, borderRadius: 6, background: '#2E4A2A', color: '#fff', border: 'none', cursor: 'pointer' };
+function emptyDraft() {
+  return { name: '', type: 'day_trip', lead_role: '', status: 'מתוכנן' };
+}
 
-export default function MifalimList() {
-  const { mifalim, loading, createMifal, deleteMifal } = useMifalim();
-  const [name, setName] = useState('');
-  const [type, setType] = useState('day_trip');
+function CreateMifalModal({ open, onClose, onCreate }) {
+  const [draft, setDraft] = useState(emptyDraft());
   const [saving, setSaving] = useState(false);
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    if (!name.trim()) return;
+  function set(patch) { setDraft(d => ({ ...d, ...patch })); }
+
+  async function handleSave() {
+    if (!draft.name.trim()) return;
     setSaving(true);
-    await createMifal({ name: name.trim(), type });
-    setName('');
+    await onCreate(draft);
     setSaving(false);
+    setDraft(emptyDraft());
+    onClose();
   }
 
   return (
-    <div style={boxStyle}>
-      <h2 style={{ marginBottom: 12 }}>מפעלים (נתונים אמיתיים מ-Supabase)</h2>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="יצירת מפעל חדש"
+      footer={
+        <>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
+          <button disabled={saving || !draft.name.trim()} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.name.trim() ? 0.6 : 1 }}>
+            {saving ? 'שומר...' : 'יצירה'}
+          </button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label="שם המפעל">
+          <TextInput value={draft.name} onChange={e => set({ name: e.target.value })} placeholder="לדוגמה: מחנה קיץ שכבת ז'" />
+        </Field>
+        <Field label="סוג מפעל">
+          <Select value={draft.type} onChange={e => set({ type: e.target.value })}>
+            {Object.entries(ALL_TYPES).map(([key, def]) => <option key={key} value={key}>{def.label}</option>)}
+          </Select>
+        </Field>
+        <Field label="בעל תפקיד אחראי">
+          <TextInput value={draft.lead_role} onChange={e => set({ lead_role: e.target.value })} placeholder="לדוגמה: ר' תחום טיילנות" />
+        </Field>
+        <Field label="סטטוס">
+          <Select value={draft.status} onChange={e => set({ status: e.target.value })}>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </Select>
+        </Field>
+      </div>
+    </Modal>
+  );
+}
 
-      <form onSubmit={handleCreate} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="שם המפעל"
-          style={{ ...inputStyle, flex: 1, minWidth: 180 }}
-        />
-        <select value={type} onChange={e => setType(e.target.value)} style={inputStyle}>
-          {Object.entries(MIFAL_TYPES).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-        <button type="submit" disabled={saving || !name.trim()} style={buttonStyle}>
-          {saving ? 'שומר...' : 'הוספת מפעל'}
+export default function MifalimList() {
+  const { mifalim, loading, createMifal, deleteMifal } = useMifalim();
+  const [createOpen, setCreateOpen] = useState(false);
+
+  return (
+    <div>
+      <CreateMifalModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={createMifal} />
+
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest }}>
+          <Plus size={16} /> יצירת מפעל חדש
         </button>
-      </form>
+      </div>
 
-      {loading ? (
-        <p>טוען...</p>
-      ) : mifalim.length === 0 ? (
-        <p style={{ color: '#666' }}>אין עדיין מפעלים — תוסיפו את הראשון למעלה.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'right', borderBottom: '2px solid #DAD8C7' }}>
-              <th style={{ padding: 8 }}>שם</th>
-              <th style={{ padding: 8 }}>סוג</th>
-              <th style={{ padding: 8 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {mifalim.map(m => (
-              <tr key={m.id} style={{ borderBottom: '1px solid #EEEEE4' }}>
-                <td style={{ padding: 8 }}>{m.name}</td>
-                <td style={{ padding: 8 }}>{MIFAL_TYPES[m.type] || m.type}</td>
-                <td style={{ padding: 8, textAlign: 'left' }}>
-                  <button onClick={() => deleteMifal(m.id)} style={{ background: 'none', border: 'none', color: '#9A3E2E', cursor: 'pointer' }}>
-                    מחיקה
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <Card title="כל המפעלים (נתונים אמיתיים מ-Supabase)">
+        {loading ? (
+          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+        ) : mifalim.length === 0 ? (
+          <div className="text-center py-16 rounded-xl" style={{ background: C.paper, border: `1px dashed ${C.line}`, color: C.inkSoft }}>
+            <Tent size={28} className="mx-auto mb-3" style={{ color: C.sage }} />
+            אין עדיין מפעלים — תלחצו על "יצירת מפעל חדש" למעלה
+          </div>
+        ) : (
+          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr style={{ background: C.forest }}>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">שם המפעל</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">סוג</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">אחראי</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">סטטוס</th>
+                  <th className="w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {mifalim.map((m, i) => {
+                  const def = ALL_TYPES[m.type] || {};
+                  const Icon = def.icon || Tent;
+                  return (
+                    <tr key={m.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                      <td className="px-4 py-3 font-semibold" style={{ color: C.forestDark }}>{m.name || 'מפעל ללא שם'}</td>
+                      <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.inkSoft }}><Icon size={13} />{def.label || m.type}</span></td>
+                      <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>
+                      <td className="px-4 py-3"><Badge tone={STATUS_TONE[m.status] || 'forest'}>{m.status}</Badge></td>
+                      <td className="px-2 py-3 text-center">
+                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`למחוק את "${m.name || 'המפעל'}"?`)) deleteMifal(m.id); }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

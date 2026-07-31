@@ -15,7 +15,8 @@ export default function SignOutButton() {
   return (
     <button
       onClick={handleSignOut}
-      style={{ padding: '8px 16px', marginTop: 16, borderRadius: 6, border: '1px solid #ccc', background: '#fff', cursor: 'pointer' }}
+      className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+      style={{ background: '#1E331B', color: '#fff', border: '1px solid #4C6B45' }}
     >
       התנתקות
     </button>
