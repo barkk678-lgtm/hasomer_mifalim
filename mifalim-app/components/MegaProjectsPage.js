@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { Plus, Trash2, Layers } from 'lucide-react';
 import { useMegaProjects } from '../lib/useMegaProjects';
 import { C } from '../lib/designSystem';
@@ -65,7 +66,7 @@ export default function MegaProjectsPage() {
         <div className="flex flex-col gap-2">
           {megaProjects.map(mp => (
             <div key={mp.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-              <span className="font-semibold" style={{ color: C.forestDark }}>{mp.name}</span>
+              <Link href={`/mega/${mp.id}`} className="font-semibold hover:underline" style={{ color: C.forestDark }}>{mp.name}</Link>
               <IconButton icon={Trash2} tone="danger" onClick={() => { if (confirm(`למחוק את "${mp.name}"?`)) deleteMegaProject(mp.id); }} title="מחיקה" />
             </div>
           ))}
