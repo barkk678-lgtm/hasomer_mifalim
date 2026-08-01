@@ -31,10 +31,14 @@ export function useFiles(ownerType, ownerId) {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
       for (const file of files) {
-        // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
-        // backends — sanitize the filename portion so uploads with those characters don't fail.
-        const safeName = file.name.replace(/[#?%]/g, '_');
-        const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
+        // Supabase Storage rejects object keys with non-ASCII characters (e.g. Hebrew names) —
+        // "Invalid key". The display name (Hebrew and all) already lives in files.name below, so
+        // the storage key itself doesn't need to reflect the original filename at all: build it
+        // from only a timestamp + random id + the (ASCII-sanitized) extension.
+        const dotIdx = file.name.lastIndexOf('.');
+        const ext = (dotIdx > 0 ? file.name.slice(dotIdx) : '').replace(/[^a-zA-Z0-9.]/g, '');
+        const randomId = Math.random().toString(36).slice(2, 10);
+        const path = `${ownerType}/${ownerId}/${Date.now()}_${randomId}${ext}`;
         const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
         if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
         const { data, error } = await supabase.from('files').insert({

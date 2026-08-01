@@ -1,203 +1,513 @@
-diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index ae75413..299946d 100644
---- a/mifalim-app/components/MifalDetailView.js
-+++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,6 +1,7 @@
- 'use client';
- import { useState, useEffect } from 'react';
- import Link from 'next/link';
-+import { useRouter } from 'next/navigation';
- import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
- import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
- import BusLogisticsTab from './BusLogisticsTab';
-@@ -401,7 +402,7 @@ function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categ
- }
- 
- function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
--  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
-+  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError } = useFiles('mifal', mifalId);
-   const [pages, setPages] = useState({});
-   const [dragCat, setDragCat] = useState(null);
-   const isFlat = categories.length === 1;
-@@ -429,6 +430,11 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
-           </label>
-         </div>
-       </div>
-+      {uploadError && (
-+        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
-+          {uploadError}
-+        </div>
-+      )}
-       {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
-       {loading ? (
-         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-@@ -583,18 +589,26 @@ function SummaryStat({ label, value, tone }) {
- }
- 
- export default function MifalDetailView({ mifalId }) {
--  const { mifal, loading, updateMifal } = useMifal(mifalId);
-+  const router = useRouter();
-+  const { mifal, loading, updateMifal, deleteMifal } = useMifal(mifalId);
-   const { tiers } = usePricingTiers(mifalId);
-   const { income, expenses } = useBudget('mifal', mifalId);
-   const [tab, setTab] = useState('tasks');
-   const [editOpen, setEditOpen] = useState(false);
- 
-+  async function handleDelete() {
-+    if (!confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${mifal.name || 'ללא שם'}"?`)) return;
-+    const ok = await deleteMifal();
-+    if (ok) router.push('/');
-+  }
-+
-   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
-   if (!mifal) return <p className="text-sm" style={{ color: C.rust }}>המפעל לא נמצא.</p>;
- 
-   const def = ALL_TYPES[mifal.type] || {};
-   const Icon = def.icon;
-   const isPrep = mifal.type === 'preparation';
-+  const dateSingle = mifal.type === 'day_trip' || (isPrep && mifal.prep_date_mode === 'single');
- 
-   const expectedParticipants = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
-   const actualParticipants = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
-@@ -617,7 +631,10 @@ export default function MifalDetailView({ mifalId }) {
-             {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
-             <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
-           </div>
--          <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
-+          <div className="flex items-center gap-1">
-+            <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
-+            <IconButton icon={Trash2} tone="danger" title="מחיקת המפעל" onClick={handleDelete} />
-+          </div>
-         </div>
-         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
-         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
-@@ -627,7 +644,22 @@ export default function MifalDetailView({ mifalId }) {
-           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
-           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
-           <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
--          <InfoField label="תאריכים" value={dateRangeLabel(mifal)} />
-+          {mifal.type === 'day_trip' ? (
-+            <>
-+              <InfoField label="סוג טיול" value={mifal.trip_type} />
-+              <InfoField label="תאריך המפעל" value={formatDate(mifal.event_date)} />
-+            </>
-+          ) : dateSingle ? (
-+            <InfoField label="תאריך ההכנה" value={formatDate(mifal.event_date)} />
-+          ) : (
-+            <>
-+              <InfoField label={mifal.type === 'multi_day' ? 'סוג מחנה' : mifal.type === 'seminar' ? 'סוג סמינר' : 'הכנת מדריכים'} value={mifal.type === 'multi_day' ? mifal.camp_type : mifal.type === 'seminar' ? mifal.seminar_type : 'הכנה'} />
-+              <InfoField label="תאריך המפעל - התחלה" value={formatDate(mifal.start_date)} />
-+            </>
-+          )}
-+          {!dateSingle && <InfoField label="תאריך המפעל - סיום" value={formatDate(mifal.end_date)} />}
-+          {dateSingle ? <InfoField label="תאריך גיבוי" value={formatDate(mifal.backup_date)} /> : <InfoField label="תאריך תחילת גיבוי" value={formatDate(mifal.backup_start_date)} />}
-+          {!dateSingle && <InfoField label="תאריך סיום גיבוי" value={formatDate(mifal.backup_end_date)} />}
-           <InfoField label="מיקום" value={mifal.accommodation} />
-           <InfoField label="מסלולים" value={mifal.routes} />
-           <InfoField label="הערות" value={mifal.comments} />
 diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
-index c53d409..543445e 100644
+index 543445e..3c9107a 100644
 --- a/mifalim-app/components/MifalimList.js
 +++ b/mifalim-app/components/MifalimList.js
-@@ -293,7 +293,7 @@ export default function MifalimList() {
-                       <td className="px-4 py-3"><StatusBadge status={m.status} /></td>
-                       <td className="px-4 py-3"><Badge tone={balance >= 0 ? 'good' : 'rust'}>{money(balance)}</Badge></td>
-                       <td className="px-2 py-3 text-center">
--                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`למחוק את "${m.name || 'המפעל'}"?`)) deleteMifal(m.id); }} />
-+                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${m.name || 'ללא שם'}"?`)) deleteMifal(m.id); }} />
-                       </td>
-                     </tr>
-                   );
+@@ -8,9 +8,12 @@ import { Field, TextInput, TextArea, Select, Badge, StatusBadge, IconButton, Car
+ import CrossFilterDonutChart from './CrossFilterDonutChart';
+ 
+ function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
+-function isSingleDateType(m) { return m.type === 'day_trip'; }
++function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
++function startDateOf(m) {
++  return m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
++}
+ function dateRangeLabel(m) {
+-  const start = m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
++  const start = startDateOf(m);
+   const end = isSingleDateType(m) ? start : (m.date_mode === 'backup' ? m.backup_end_date : m.end_date);
+   if (!start) return '—';
+   const fmt = d => { if (!d) return '?'; const [y, mo, da] = d.split('-'); return `${da}/${mo}/${y}`; };
+@@ -158,6 +161,7 @@ export default function MifalimList() {
+   const [statusFilter, setStatusFilter] = useState('all');
+   const [pRange, setPRange] = useState(['', '']);
+   const [bRange, setBRange] = useState(['', '']);
++  const [dateFilter, setDateFilter] = useState(['', '']);
+   const [sortKey, setSortKey] = useState(null);
+   const [sortDir, setSortDir] = useState('asc');
+   const editingMifal = mifalim.find(m => m.id === editId);
+@@ -172,20 +176,23 @@ export default function MifalimList() {
+     const bal = Number(m.balance) || 0;
+     if (bRange[0] !== '' && bal < Number(bRange[0])) return false;
+     if (bRange[1] !== '' && bal > Number(bRange[1])) return false;
++    const start = startDateOf(m);
++    if (dateFilter[0] !== '' && (!start || start < dateFilter[0])) return false;
++    if (dateFilter[1] !== '' && (!start || start > dateFilter[1])) return false;
+     return true;
+   }
+ 
+   const typeChartData = useMemo(() => {
+     const src = mifalim.filter(m => passBaseFilters(m) && (!roleFilter || m.lead_role === roleFilter));
+     return Object.entries(ALL_TYPES).map(([key, def]) => ({ key, name: def.label, value: src.filter(m => m.type === key).length })).filter(t => t.value > 0);
+-  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
++  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
+ 
+   const roleChartData = useMemo(() => {
+     const src = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter));
+     const counts = {};
+     src.forEach(m => { const key = m.lead_role || 'לא הוגדר'; counts[key] = (counts[key] || 0) + 1; });
+     return Object.entries(counts).map(([name, value]) => ({ key: name, name, value }));
+-  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
++  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
+ 
+   const filtered = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter) && (!roleFilter || m.lead_role === roleFilter));
+   const sorted = useMemo(() => {
+@@ -199,7 +206,7 @@ export default function MifalimList() {
+   }, [filtered, sortKey, sortDir]);
+   function toggleSort(key) { setSortKey(k => { if (k !== key) { setSortDir('asc'); return key; } setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return key; }); }
+ 
+-  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '';
++  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '' || dateFilter[0] !== '' || dateFilter[1] !== '';
+ 
+   return (
+     <div>
+@@ -211,7 +218,7 @@ export default function MifalimList() {
+       <div className="mb-4 flex items-center gap-3">
+         <ToggleSwitch value={activeOnly ? 'active' : 'all'} onChange={v => setActiveOnly(v === 'active')} leftLabel="כל המפעלים" rightLabel="מפעלים פעילים" leftValue="all" rightValue="active" />
+         {anyFilter && (
+-          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
++          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); setDateFilter(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
+         )}
+       </div>
+ 
+@@ -260,9 +267,15 @@ export default function MifalimList() {
+                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
+                     <HeaderFilterPopover label="שם המפעל" type="text" value={nameFilter} onChange={setNameFilter} sortKey="name" activeSortKey={sortKey} onSort={toggleSort} />
+                   </th>
+-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('type')}>סוג <ArrowUpDown size={11} style={{ opacity: sortKey === 'type' ? 1 : 0.4 }} /></button></th>
+-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('lead_role')}>אחראי <ArrowUpDown size={11} style={{ opacity: sortKey === 'lead_role' ? 1 : 0.4 }} /></button></th>
+-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">תאריכים</th>
++                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
++                    <HeaderFilterPopover label="סוג" type="select" value={typeFilter || 'all'} onChange={v => setTypeFilter(v === 'all' ? null : v)} options={Object.entries(ALL_TYPES).map(([key, def]) => ({ value: key, label: def.label }))} sortKey="type" activeSortKey={sortKey} onSort={toggleSort} />
++                  </th>
++                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
++                    <HeaderFilterPopover label="אחראי" type="select" value={roleFilter || 'all'} onChange={v => setRoleFilter(v === 'all' ? null : v)} options={LEAD_ROLES.map(r => ({ value: r, label: r }))} sortKey="lead_role" activeSortKey={sortKey} onSort={toggleSort} />
++                  </th>
++                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
++                    <HeaderFilterPopover label="תאריכים" type="date-range" value={dateFilter} onChange={setDateFilter} sortKey="date" activeSortKey={sortKey} onSort={toggleSort} />
++                  </th>
+                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
+                     <HeaderFilterPopover label="משתתפים" type="range" value={pRange} onChange={setPRange} sortKey="participants" activeSortKey={sortKey} onSort={toggleSort} />
+                   </th>
+diff --git a/mifalim-app/components/TasksPage.js b/mifalim-app/components/TasksPage.js
+index dfbaef9..227973d 100644
+--- a/mifalim-app/components/TasksPage.js
++++ b/mifalim-app/components/TasksPage.js
+@@ -1,10 +1,12 @@
+ 'use client';
+-import { useState } from 'react';
+-import { Plus, Trash2, Pencil } from 'lucide-react';
++import { useState, useEffect } from 'react';
++import { useRouter } from 'next/navigation';
++import { Plus, Trash2, Pencil, ChevronDown } from 'lucide-react';
+ import { useTasks } from '../lib/useTasks';
+ import { useMifalim } from '../lib/useMifalim';
+-import { C } from '../lib/designSystem';
+-import { Field, TextInput, Select, IconButton, Card, Modal } from './ui';
++import { useStakeholders } from '../lib/useStakeholders';
++import { C, ACTIVE_STATUSES } from '../lib/designSystem';
++import { Field, TextInput, TextArea, Select, IconButton, Card, Modal, StatusBadge, ExportButton } from './ui';
+ 
+ function formatDate(iso) {
+   if (!iso) return '';
+@@ -34,22 +36,53 @@ const URGENCY_STYLE = {
+   normal: { bg: C.surface, border: C.line },
+ };
+ 
+-function emptyDraft(mifalim) {
+-  return { mifal_id: mifalim[0]?.id || '', task_name: '', assigned_to: '', deadline: '' };
++function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
++function getRelevantDates(m) {
++  if (isSingleDateType(m)) { const d = m.date_mode === 'backup' ? m.backup_date : m.event_date; return { start: d, end: d }; }
++  const start = m.date_mode === 'backup' ? m.backup_start_date : m.start_date;
++  const end = m.date_mode === 'backup' ? m.backup_end_date : m.end_date;
++  return { start, end };
++}
++function effectiveStatus(m) {
++  if (m.status === 'בוטל' || m.status === 'הסתיים') return m.status;
++  const today = new Date(); today.setHours(0, 0, 0, 0);
++  const { end } = getRelevantDates(m);
++  if (end) { const endD = new Date(end); if (today > endD) return 'ממתין להפקת לקחים'; }
++  if (m.work_start_date) { const wsd = new Date(m.work_start_date); if (today >= wsd) return 'בעבודה'; }
++  return m.status || 'מתוכנן';
++}
++
++function StatCard({ label, value, tone }) {
++  return (
++    <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
++      <div className="text-lg font-bold" style={{ color: tone === 'rust' ? C.rust : C.forestDark }}>{value}</div>
++      <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>{label}</div>
++    </div>
++  );
+ }
+ 
+-function CreateTaskModal({ open, onClose, mifalim, onCreate }) {
+-  const [draft, setDraft] = useState(emptyDraft(mifalim));
++function TaskFormModal({ open, onClose, activeMifalim, editing, onCreate, onUpdate }) {
++  const [mifalId, setMifalId] = useState('');
++  const [taskName, setTaskName] = useState('');
++  const [assignedTo, setAssignedTo] = useState('');
++  const [deadline, setDeadline] = useState('');
++  const [comments, setComments] = useState('');
+   const [saving, setSaving] = useState(false);
++  const { stakeholders } = useStakeholders(mifalId);
+ 
+-  function set(patch) { setDraft(d => ({ ...d, ...patch })); }
++  useEffect(() => {
++    if (open) {
++      if (editing) { setMifalId(editing.mifal_id); setTaskName(editing.task_name || ''); setAssignedTo(editing.assigned_to || ''); setDeadline(editing.deadline || ''); setComments(editing.comments || ''); }
++      else { setMifalId(activeMifalim[0]?.id || ''); setTaskName(''); setAssignedTo(''); setDeadline(''); setComments(''); }
++    }
++  }, [open, editing]);
+ 
+-  async function handleSave() {
+-    if (!draft.task_name.trim() || !draft.mifal_id) return;
++  async function save() {
++    if (!mifalId || !taskName.trim()) return;
+     setSaving(true);
+-    await onCreate({ ...draft, is_completed: false });
++    if (editing) await onUpdate(editing.id, { mifal_id: mifalId, task_name: taskName, assigned_to: assignedTo, deadline: deadline || null, comments });
++    else await onCreate({ mifal_id: mifalId, task_name: taskName, assigned_to: assignedTo, deadline: deadline || null, comments, is_completed: false });
+     setSaving(false);
+-    setDraft(emptyDraft(mifalim));
+     onClose();
+   }
+ 
+@@ -57,113 +90,170 @@ function CreateTaskModal({ open, onClose, mifalim, onCreate }) {
+     <Modal
+       open={open}
+       onClose={onClose}
+-      title="יצירת משימה חדשה"
++      title={editing ? 'עריכת משימה' : 'יצירת משימה חדשה'}
+       footer={
+         <>
+           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
+-          <button disabled={saving || !draft.task_name.trim() || !draft.mifal_id} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.task_name.trim() ? 0.6 : 1 }}>
+-            {saving ? 'שומר...' : 'יצירה'}
++          <button disabled={saving || !mifalId || !taskName.trim()} onClick={save} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !mifalId || !taskName.trim() ? 0.6 : 1 }}>
++            {saving ? 'שומר...' : editing ? 'שמירה' : 'יצירה'}
+           </button>
+         </>
+       }
+     >
+       <div className="flex flex-col gap-4">
+         <Field label="שיוך למפעל">
+-          <Select value={draft.mifal_id} onChange={e => set({ mifal_id: e.target.value })}>
+-            {mifalim.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
++          <Select value={mifalId} onChange={e => setMifalId(e.target.value)}>
++            {activeMifalim.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+           </Select>
+         </Field>
+-        <Field label="שם המשימה">
+-          <TextInput value={draft.task_name} onChange={e => set({ task_name: e.target.value })} />
+-        </Field>
++        <Field label="שם המשימה"><TextInput value={taskName} onChange={e => setTaskName(e.target.value)} /></Field>
+         <Field label="אחראי">
+-          <TextInput value={draft.assigned_to} onChange={e => set({ assigned_to: e.target.value })} />
+-        </Field>
+-        <Field label="תאריך יעד">
+-          <TextInput type="date" value={draft.deadline} onChange={e => set({ deadline: e.target.value })} />
++          {stakeholders.length > 0 ? (
++            <Select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
++              <option value="">לא משויך</option>
++              {stakeholders.map(s => <option key={s.id} value={s.full_name}>{s.full_name}</option>)}
++            </Select>
++          ) : (
++            <TextInput value={assignedTo} onChange={e => setAssignedTo(e.target.value)} />
++          )}
+         </Field>
++        <Field label="תאריך יעד"><TextInput type="date" value={deadline} onChange={e => setDeadline(e.target.value)} /></Field>
++        <Field label="הערות"><TextArea value={comments} onChange={e => setComments(e.target.value)} /></Field>
+       </div>
+     </Modal>
+   );
+ }
+ 
+ export default function TasksPage() {
++  const router = useRouter();
+   const { tasks, loading, createTask, updateTask, deleteTask } = useTasks();
+   const { mifalim, loading: mifalimLoading } = useMifalim();
++  const [statusFilter, setStatusFilter] = useState('open');
++  const [expanded, setExpanded] = useState({});
+   const [createOpen, setCreateOpen] = useState(false);
+-  const [showAll, setShowAll] = useState(false);
++  const [editingTask, setEditingTask] = useState(null);
++
++  const activeMifalim = mifalim.filter(m => ACTIVE_STATUSES.includes(effectiveStatus(m)));
++  const activeIds = new Set(activeMifalim.map(m => m.id));
++
++  const groups = activeMifalim.map(m => {
++    const mifalTasks = tasks.filter(t => t.mifal_id === m.id);
++    const shown = statusFilter === 'open' ? mifalTasks.filter(t => !t.is_completed) : mifalTasks;
++    return { mifal: m, tasks: shown };
++  }).filter(g => g.tasks.length > 0 || statusFilter === 'all');
++
++  const visibleTasksFlat = groups.flatMap(g => g.tasks);
++  const openCount = tasks.filter(t => activeIds.has(t.mifal_id) && !t.is_completed).length;
++  const overdueCount = tasks.filter(t => activeIds.has(t.mifal_id) && taskUrgency(t) === 'overdue').length;
++
++  function toggleExpand(id) { setExpanded(e => ({ ...e, [id]: e[id] === false ? true : false })); }
++  function isExpanded(id) { return expanded[id] !== false; }
+ 
+-  const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
+-  const openCount = tasks.filter(t => !t.is_completed).length;
+-  const overdueCount = tasks.filter(t => taskUrgency(t) === 'overdue').length;
++  const exportRows = [];
++  groups.forEach(g => g.tasks.forEach(t => exportRows.push({ ...t, mifalName: g.mifal.name })));
++
++  const loadingAny = loading || mifalimLoading;
+ 
+   return (
+     <div>
+       <h1 className="text-2xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>משימות מכלל המפעלים</h1>
+ 
+-      {!mifalimLoading && <CreateTaskModal open={createOpen} onClose={() => setCreateOpen(false)} mifalim={mifalim} onCreate={createTask} />}
++      {!mifalimLoading && (
++        <>
++          <TaskFormModal open={createOpen} onClose={() => setCreateOpen(false)} activeMifalim={activeMifalim} editing={null} onCreate={createTask} onUpdate={updateTask} />
++          <TaskFormModal open={!!editingTask} onClose={() => setEditingTask(null)} activeMifalim={activeMifalim} editing={editingTask} onCreate={createTask} onUpdate={updateTask} />
++        </>
++      )}
+ 
+-      <div className="grid grid-cols-2 gap-4 mb-4">
+-        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
+-          <div className="text-lg font-bold" style={{ color: C.forestDark }}>{openCount}</div>
+-          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות פתוחות</div>
+-        </div>
+-        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
+-          <div className="text-lg font-bold" style={{ color: C.rust }}>{overdueCount}</div>
+-          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות בחריגה</div>
+-        </div>
++      <div className="flex justify-end mb-2">
++        <button onClick={() => setStatusFilter(f => (f === 'open' ? 'all' : 'open'))} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
++          {statusFilter === 'open' ? 'הצג את כל המשימות הפעילות' : 'הצג משימות פתוחות בלבד'}
++        </button>
++      </div>
++
++      <div className="grid grid-cols-3 gap-4 mb-4">
++        <StatCard label="כמות מפעלים פעילים" value={groups.length} />
++        <StatCard label="כמות משימות פתוחות" value={openCount} />
++        <StatCard label="כמות משימות בחריגה" value={overdueCount} tone="rust" />
+       </div>
+ 
+       <div className="flex items-center justify-between mb-2">
+-        <button onClick={() => setCreateOpen(true)} disabled={mifalim.length === 0} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest, opacity: mifalim.length === 0 ? 0.6 : 1 }}>
++        <button onClick={() => setCreateOpen(true)} disabled={activeMifalim.length === 0} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest, opacity: activeMifalim.length === 0 ? 0.6 : 1 }}>
+           <Plus size={16} /> יצירת משימה חדשה
+         </button>
+-        <button onClick={() => setShowAll(s => !s)} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
+-          {showAll ? 'הצג משימות פתוחות בלבד' : 'הצג את כל המשימות'}
+-        </button>
+-      </div>
+-      {mifalim.length === 0 && <p className="text-xs mb-2" style={{ color: C.inkSoft }}>צריך קודם ליצור מפעל אחד לפחות ב"כל המפעלים" כדי לשייך אליו משימות.</p>}
+-
+-      <Card>
+-        {loading ? (
+-          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+-        ) : visible.length === 0 ? (
+-          <div className="text-center py-16 rounded-xl" style={{ background: C.paper, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין משימות להצגה</div>
+-        ) : (
+-          <table className="w-full text-sm border-collapse">
+-            <thead>
+-              <tr style={{ background: '#E3E4D6' }}>
+-                {['משימה', 'מפעל', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map(h => (
+-                  <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+-                ))}
+-              </tr>
+-            </thead>
+-            <tbody>
+-              {visible.map(t => {
+-                const u = URGENCY_STYLE[taskUrgency(t)];
+-                return (
+-                  <tr key={t.id} style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
+-                    <td className="px-4 py-2.5" style={{ color: C.ink }}>{t.task_name}</td>
+-                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.mifalim?.name || '—'}</td>
+-                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
+-                    <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
+-                    <td className="px-4 py-2.5">
+-                      <button
+-                        onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
+-                        className="px-2.5 py-1 rounded-full text-xs font-semibold"
+-                        style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
+-                      >
+-                        {t.is_completed ? 'הושלם' : 'פתוח'}
+-                      </button>
+-                    </td>
+-                    <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
+-                  </tr>
+-                );
+-              })}
+-            </tbody>
+-          </table>
++        {exportRows.length > 0 && (
++          <ExportButton
++            rows={exportRows}
++            filename="משימות.xlsx"
++            columns={[
++              { key: 'mifalName', label: 'מפעל' },
++              { key: 'task_name', label: 'משימה' },
++              { key: 'assigned_to', label: 'אחראי' },
++              { key: 'deadline', label: 'תאריך יעד', value: t => formatDate(t.deadline) },
++              { key: 'is_completed', label: 'סטטוס', value: t => (t.is_completed ? 'הושלם' : 'פתוח') },
++            ]}
++          />
+         )}
+-      </Card>
++      </div>
++      {activeMifalim.length === 0 && !mifalimLoading && <p className="text-xs mb-2" style={{ color: C.inkSoft }}>אין כרגע מפעלים פעילים לשייך אליהם משימות.</p>}
++
++      {loadingAny ? (
++        <Card><p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p></Card>
++      ) : groups.length === 0 ? (
++        <div className="text-center py-16 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין משימות להצגה</div>
++      ) : (
++        <div className="flex flex-col gap-2">
++          {groups.map(g => {
++            const open = isExpanded(g.mifal.id);
++            return (
++              <div key={g.mifal.id} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
++                <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" style={{ background: '#E3E4D6' }} onClick={() => toggleExpand(g.mifal.id)}>
++                  <div className="flex items-center gap-2">
++                    <ChevronDown size={14} style={{ transform: open ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s', color: C.forestDark }} />
++                    <button onClick={e => { e.stopPropagation(); router.push(`/mifal/${g.mifal.id}`); }} className="text-sm font-bold hover:underline" style={{ color: C.forestDark }}>{g.mifal.name}</button>
++                    <span className="text-xs" style={{ color: C.inkSoft }}>({g.tasks.length} משימות)</span>
++                  </div>
++                  <StatusBadge status={effectiveStatus(g.mifal)} />
++                </div>
++                {open && (
++                  <table className="w-full text-sm border-collapse">
++                    <thead>
++                      <tr style={{ background: '#EDEEE0' }}>
++                        {['', 'משימה', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map((h, hi) => (
++                          <th key={hi} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
++                        ))}
++                      </tr>
++                    </thead>
++                    <tbody>
++                      {g.tasks.map(t => {
++                        const u = URGENCY_STYLE[taskUrgency(t)];
++                        return (
++                          <tr key={t.id} style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
++                            <td className="px-2 py-2.5 text-center"><IconButton icon={Pencil} onClick={() => setEditingTask(t)} title="עריכה" /></td>
++                            <td className="px-4 py-2.5" style={{ whiteSpace: 'normal', wordBreak: 'break-word', color: C.ink }}>{t.task_name}</td>
++                            <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
++                            <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
++                            <td className="px-4 py-2.5">
++                              <button
++                                onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
++                                className="px-2.5 py-1 rounded-full text-xs font-semibold"
++                                style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
++                              >
++                                {t.is_completed ? 'הושלם' : 'פתוח'}
++                              </button>
++                            </td>
++                            <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
++                          </tr>
++                        );
++                      })}
++                    </tbody>
++                  </table>
++                )}
++              </div>
++            );
++          })}
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/mifalim-app/components/ui.js b/mifalim-app/components/ui.js
+index 299ef2d..65567eb 100644
+--- a/mifalim-app/components/ui.js
++++ b/mifalim-app/components/ui.js
+@@ -207,7 +207,7 @@ export function ExportButton({ rows, columns, filename }) {
+   );
+ }
+ 
+-// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range'.
++// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range' | 'date-range'.
+ export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
+   const [open, setOpen] = useState(false);
+   const ref = useRef(null);
+@@ -241,6 +241,13 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
+               <input type="number" value={value[1]} onChange={e => onChange([value[0], e.target.value])} placeholder="עד" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+             </div>
+           )}
++          {type === 'date-range' && (
++            <div className="flex flex-col gap-1.5">
++              <input type="date" value={value[0]} onChange={e => onChange([e.target.value, value[1]])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
++              <span className="text-xs text-center" style={{ color: C.inkSoft }}>עד</span>
++              <input type="date" value={value[1]} onChange={e => onChange([value[0], e.target.value])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
++            </div>
++          )}
+         </div>
+       )}
+     </div>
+@@ -262,6 +269,15 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
+ // there is different: committing must wait until focus leaves the row entirely (handled by
+ // the wrapping <tr onBlur>), not fire on every individual cell's blur while tabbing across
+ // the row, or the row gets created half-filled and the rest of what you type is discarded.
++// Postgres rejects an empty string for enum ('select') and numeric/date columns outright
++// (they're nullable, but NULL and '' aren't the same thing to it) — silently failing whatever
++// commit sent it. Any InlineGrid column of these types should send null, never '', once a
++// field's been touched and left blank.
++function normalizeForCommit(type, v) {
++  if ((type === 'number' || type === 'select' || type === 'date') && v === '') return null;
++  return v;
++}
++
+ function GridCell({ col, value, isGhost, onChange, onCommit }) {
+   const [local, setLocal] = useState(value);
+   useEffect(() => { setLocal(value); }, [value]);
+@@ -274,7 +290,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
+       <select
+         style={cellStyle}
+         value={display || ''}
+-        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
++        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(normalizeForCommit('select', v)); }}
+       >
+         <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
+         {col.options.map(o => <option key={o} value={o}>{o}</option>)}
+@@ -299,7 +315,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
+       type={type} style={cellStyle} value={display ?? ''}
+       placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
+       onChange={e => { const v = e.target.value; if (isGhost) { onChange(v); } else { setLocal(v); onChange(v); } }}
+-      onBlur={() => { if (!isGhost) onCommit && onCommit(local); }}
++      onBlur={() => { if (!isGhost) onCommit && onCommit(normalizeForCommit(col.type, local)); }}
+     />
+   );
+ }
+@@ -317,8 +333,10 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
+     if (savingDraft) return;
+     setDraft(current => {
+       if (current[primaryKey] === undefined || current[primaryKey] === null || String(current[primaryKey]).trim() === '') return current;
++      const normalized = { ...current };
++      columns.forEach(col => { normalized[col.key] = normalizeForCommit(col.type, normalized[col.key]); });
+       setSavingDraft(true);
+-      Promise.resolve(onCreate(current)).finally(() => setSavingDraft(false));
++      Promise.resolve(onCreate(normalized)).finally(() => setSavingDraft(false));
+       return makeEmptyDraft();
+     });
+   }
 diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
-index 5cbed05..0ba535c 100644
+index 0ba535c..df67d73 100644
 --- a/mifalim-app/lib/useFiles.js
 +++ b/mifalim-app/lib/useFiles.js
-@@ -9,6 +9,7 @@ export function useFiles(ownerType, ownerId) {
-   const supabase = createClient();
-   const [files, setFiles] = useState([]);
-   const [loading, setLoading] = useState(true);
-+  const [uploadError, setUploadError] = useState('');
- 
-   const reload = useCallback(async () => {
-     if (!ownerId) return;
-@@ -25,23 +26,26 @@ export function useFiles(ownerType, ownerId) {
-     const files = Array.from(fileList || []);
-     if (!files.length) return [];
-     const uploaded = [];
-+    setUploadError('');
-     try {
--      const { data: { user } } = await supabase.auth.getUser();
-+      const { data: { user }, error: authError } = await supabase.auth.getUser();
-+      if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
+@@ -31,10 +31,14 @@ export function useFiles(ownerType, ownerId) {
+       const { data: { user }, error: authError } = await supabase.auth.getUser();
+       if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
        for (const file of files) {
-         // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
-         // backends — sanitize the filename portion so uploads with those characters don't fail.
-         const safeName = file.name.replace(/[#?%]/g, '_');
-         const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
--        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
--        if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
-+        const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
-+        if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
+-        // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
+-        // backends — sanitize the filename portion so uploads with those characters don't fail.
+-        const safeName = file.name.replace(/[#?%]/g, '_');
+-        const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
++        // Supabase Storage rejects object keys with non-ASCII characters (e.g. Hebrew names) —
++        // "Invalid key". The display name (Hebrew and all) already lives in files.name below, so
++        // the storage key itself doesn't need to reflect the original filename at all: build it
++        // from only a timestamp + random id + the (ASCII-sanitized) extension.
++        const dotIdx = file.name.lastIndexOf('.');
++        const ext = (dotIdx > 0 ? file.name.slice(dotIdx) : '').replace(/[^a-zA-Z0-9.]/g, '');
++        const randomId = Math.random().toString(36).slice(2, 10);
++        const path = `${ownerType}/${ownerId}/${Date.now()}_${randomId}${ext}`;
+         const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
+         if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
          const { data, error } = await supabase.from('files').insert({
-           owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
-         }).select('*, profiles(full_name)').single();
--        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
-+        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); setUploadError(`שגיאה בשמירת "${file.name}": ${error.message}`); continue; }
-         uploaded.push(data);
-       }
-     } catch (err) {
-       console.error('שגיאה בלתי צפויה בהעלאת קבצים:', err);
-+      setUploadError(`שגיאה בלתי צפויה: ${err.message || err}`);
-     }
-     if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
-     return uploaded;
-@@ -67,5 +71,5 @@ export function useFiles(ownerType, ownerId) {
-     return data.signedUrl;
-   }
- 
--  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl };
-+  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError };
- }
-diff --git a/mifalim-app/lib/useMifal.js b/mifalim-app/lib/useMifal.js
-index bcb06b3..4ea0027 100644
---- a/mifalim-app/lib/useMifal.js
-+++ b/mifalim-app/lib/useMifal.js
-@@ -19,11 +19,18 @@ export function useMifal(id) {
-   useEffect(() => { reload(); }, [reload]);
- 
-   async function updateMifal(patch) {
--    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
-+    const { participants, balance, ...cleanPatch } = patch;
-+    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
-     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
-     setMifal(data);
-     return data;
-   }
- 
--  return { mifal, loading, reload, updateMifal };
-+  async function deleteMifal() {
-+    const { error } = await supabase.from('mifalim').delete().eq('id', id);
-+    if (error) { console.error('שגיאה במחיקת מפעל:', error); return false; }
-+    return true;
-+  }
-+
-+  return { mifal, loading, reload, updateMifal, deleteMifal };
- }
-diff --git a/mifalim-app/lib/useMifalim.js b/mifalim-app/lib/useMifalim.js
-index 404c9ac..bd45f75 100644
---- a/mifalim-app/lib/useMifalim.js
-+++ b/mifalim-app/lib/useMifalim.js
-@@ -58,7 +58,12 @@ export function useMifalim() {
-   }
- 
-   async function updateMifal(id, patch) {
--    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
-+    // `patch` here is usually the edit modal's draft, seeded from a row out of `mifalim` —
-+    // which carries the `participants`/`balance` fields this hook computes client-side above.
-+    // Those aren't real columns; sending them through silently fails the whole update (Postgres
-+    // rejects the unknown columns), which from the list screen looked like "edits don't save".
-+    const { participants, balance, ...cleanPatch } = patch;
-+    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
-     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
-     setMifalim(prev => prev.map(m => (m.id === id ? { ...data, participants: m.participants, balance: m.balance } : m)));
-     return data;

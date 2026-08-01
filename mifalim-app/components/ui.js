@@ -207,7 +207,7 @@ export function ExportButton({ rows, columns, filename }) {
   );
 }
 
-// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range'.
+// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range' | 'date-range'.
 export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -241,6 +241,13 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
               <input type="number" value={value[1]} onChange={e => onChange([value[0], e.target.value])} placeholder="עד" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
             </div>
           )}
+          {type === 'date-range' && (
+            <div className="flex flex-col gap-1.5">
+              <input type="date" value={value[0]} onChange={e => onChange([e.target.value, value[1]])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+              <span className="text-xs text-center" style={{ color: C.inkSoft }}>עד</span>
+              <input type="date" value={value[1]} onChange={e => onChange([value[0], e.target.value])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -262,6 +269,15 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
 // there is different: committing must wait until focus leaves the row entirely (handled by
 // the wrapping <tr onBlur>), not fire on every individual cell's blur while tabbing across
 // the row, or the row gets created half-filled and the rest of what you type is discarded.
+// Postgres rejects an empty string for enum ('select') and numeric/date columns outright
+// (they're nullable, but NULL and '' aren't the same thing to it) — silently failing whatever
+// commit sent it. Any InlineGrid column of these types should send null, never '', once a
+// field's been touched and left blank.
+function normalizeForCommit(type, v) {
+  if ((type === 'number' || type === 'select' || type === 'date') && v === '') return null;
+  return v;
+}
+
 function GridCell({ col, value, isGhost, onChange, onCommit }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
@@ -274,7 +290,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
       <select
         style={cellStyle}
         value={display || ''}
-        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
+        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(normalizeForCommit('select', v)); }}
       >
         <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
         {col.options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -299,7 +315,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
       type={type} style={cellStyle} value={display ?? ''}
       placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
       onChange={e => { const v = e.target.value; if (isGhost) { onChange(v); } else { setLocal(v); onChange(v); } }}
-      onBlur={() => { if (!isGhost) onCommit && onCommit(local); }}
+      onBlur={() => { if (!isGhost) onCommit && onCommit(normalizeForCommit(col.type, local)); }}
     />
   );
 }
@@ -317,8 +333,10 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
     if (savingDraft) return;
     setDraft(current => {
       if (current[primaryKey] === undefined || current[primaryKey] === null || String(current[primaryKey]).trim() === '') return current;
+      const normalized = { ...current };
+      columns.forEach(col => { normalized[col.key] = normalizeForCommit(col.type, normalized[col.key]); });
       setSavingDraft(true);
-      Promise.resolve(onCreate(current)).finally(() => setSavingDraft(false));
+      Promise.resolve(onCreate(normalized)).finally(() => setSavingDraft(false));
       return makeEmptyDraft();
     });
   }

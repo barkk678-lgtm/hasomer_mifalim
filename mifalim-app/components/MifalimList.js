@@ -8,9 +8,12 @@ import { Field, TextInput, TextArea, Select, Badge, StatusBadge, IconButton, Car
 import CrossFilterDonutChart from './CrossFilterDonutChart';
 
 function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
-function isSingleDateType(m) { return m.type === 'day_trip'; }
+function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
+function startDateOf(m) {
+  return m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
+}
 function dateRangeLabel(m) {
-  const start = m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
+  const start = startDateOf(m);
   const end = isSingleDateType(m) ? start : (m.date_mode === 'backup' ? m.backup_end_date : m.end_date);
   if (!start) return '—';
   const fmt = d => { if (!d) return '?'; const [y, mo, da] = d.split('-'); return `${da}/${mo}/${y}`; };
@@ -158,6 +161,7 @@ export default function MifalimList() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [pRange, setPRange] = useState(['', '']);
   const [bRange, setBRange] = useState(['', '']);
+  const [dateFilter, setDateFilter] = useState(['', '']);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const editingMifal = mifalim.find(m => m.id === editId);
@@ -172,20 +176,23 @@ export default function MifalimList() {
     const bal = Number(m.balance) || 0;
     if (bRange[0] !== '' && bal < Number(bRange[0])) return false;
     if (bRange[1] !== '' && bal > Number(bRange[1])) return false;
+    const start = startDateOf(m);
+    if (dateFilter[0] !== '' && (!start || start < dateFilter[0])) return false;
+    if (dateFilter[1] !== '' && (!start || start > dateFilter[1])) return false;
     return true;
   }
 
   const typeChartData = useMemo(() => {
     const src = mifalim.filter(m => passBaseFilters(m) && (!roleFilter || m.lead_role === roleFilter));
     return Object.entries(ALL_TYPES).map(([key, def]) => ({ key, name: def.label, value: src.filter(m => m.type === key).length })).filter(t => t.value > 0);
-  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
+  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
 
   const roleChartData = useMemo(() => {
     const src = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter));
     const counts = {};
     src.forEach(m => { const key = m.lead_role || 'לא הוגדר'; counts[key] = (counts[key] || 0) + 1; });
     return Object.entries(counts).map(([name, value]) => ({ key: name, name, value }));
-  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
+  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
 
   const filtered = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter) && (!roleFilter || m.lead_role === roleFilter));
   const sorted = useMemo(() => {
@@ -199,7 +206,7 @@ export default function MifalimList() {
   }, [filtered, sortKey, sortDir]);
   function toggleSort(key) { setSortKey(k => { if (k !== key) { setSortDir('asc'); return key; } setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return key; }); }
 
-  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '';
+  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '' || dateFilter[0] !== '' || dateFilter[1] !== '';
 
   return (
     <div>
@@ -211,7 +218,7 @@ export default function MifalimList() {
       <div className="mb-4 flex items-center gap-3">
         <ToggleSwitch value={activeOnly ? 'active' : 'all'} onChange={v => setActiveOnly(v === 'active')} leftLabel="כל המפעלים" rightLabel="מפעלים פעילים" leftValue="all" rightValue="active" />
         {anyFilter && (
-          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
+          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); setDateFilter(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
         )}
       </div>
 
@@ -260,9 +267,15 @@ export default function MifalimList() {
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
                     <HeaderFilterPopover label="שם המפעל" type="text" value={nameFilter} onChange={setNameFilter} sortKey="name" activeSortKey={sortKey} onSort={toggleSort} />
                   </th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('type')}>סוג <ArrowUpDown size={11} style={{ opacity: sortKey === 'type' ? 1 : 0.4 }} /></button></th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('lead_role')}>אחראי <ArrowUpDown size={11} style={{ opacity: sortKey === 'lead_role' ? 1 : 0.4 }} /></button></th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">תאריכים</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
+                    <HeaderFilterPopover label="סוג" type="select" value={typeFilter || 'all'} onChange={v => setTypeFilter(v === 'all' ? null : v)} options={Object.entries(ALL_TYPES).map(([key, def]) => ({ value: key, label: def.label }))} sortKey="type" activeSortKey={sortKey} onSort={toggleSort} />
+                  </th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
+                    <HeaderFilterPopover label="אחראי" type="select" value={roleFilter || 'all'} onChange={v => setRoleFilter(v === 'all' ? null : v)} options={LEAD_ROLES.map(r => ({ value: r, label: r }))} sortKey="lead_role" activeSortKey={sortKey} onSort={toggleSort} />
+                  </th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
+                    <HeaderFilterPopover label="תאריכים" type="date-range" value={dateFilter} onChange={setDateFilter} sortKey="date" activeSortKey={sortKey} onSort={toggleSort} />
+                  </th>
                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
                     <HeaderFilterPopover label="משתתפים" type="range" value={pRange} onChange={setPRange} sortKey="participants" activeSortKey={sortKey} onSort={toggleSort} />
                   </th>
