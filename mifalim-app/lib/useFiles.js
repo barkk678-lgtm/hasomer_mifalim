@@ -9,6 +9,7 @@ export function useFiles(ownerType, ownerId) {
   const supabase = createClient();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploadError, setUploadError] = useState('');
 
   const reload = useCallback(async () => {
     if (!ownerId) return;
@@ -25,23 +26,26 @@ export function useFiles(ownerType, ownerId) {
     const files = Array.from(fileList || []);
     if (!files.length) return [];
     const uploaded = [];
+    setUploadError('');
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
       for (const file of files) {
         // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
         // backends — sanitize the filename portion so uploads with those characters don't fail.
         const safeName = file.name.replace(/[#?%]/g, '_');
         const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
-        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
-        if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
+        const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
+        if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
         const { data, error } = await supabase.from('files').insert({
           owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
         }).select('*, profiles(full_name)').single();
-        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
+        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); setUploadError(`שגיאה בשמירת "${file.name}": ${error.message}`); continue; }
         uploaded.push(data);
       }
     } catch (err) {
       console.error('שגיאה בלתי צפויה בהעלאת קבצים:', err);
+      setUploadError(`שגיאה בלתי צפויה: ${err.message || err}`);
     }
     if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
     return uploaded;
@@ -67,5 +71,5 @@ export function useFiles(ownerType, ownerId) {
     return data.signedUrl;
   }
 
-  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl };
+  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError };
 }

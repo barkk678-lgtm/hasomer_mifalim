@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
 import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
 import BusLogisticsTab from './BusLogisticsTab';
@@ -401,7 +402,7 @@ function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categ
 }
 
 function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
-  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
+  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError } = useFiles('mifal', mifalId);
   const [pages, setPages] = useState({});
   const [dragCat, setDragCat] = useState(null);
   const isFlat = categories.length === 1;
@@ -429,6 +430,11 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
           </label>
         </div>
       </div>
+      {uploadError && (
+        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
+          {uploadError}
+        </div>
+      )}
       {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
@@ -583,11 +589,18 @@ function SummaryStat({ label, value, tone }) {
 }
 
 export default function MifalDetailView({ mifalId }) {
-  const { mifal, loading, updateMifal } = useMifal(mifalId);
+  const router = useRouter();
+  const { mifal, loading, updateMifal, deleteMifal } = useMifal(mifalId);
   const { tiers } = usePricingTiers(mifalId);
   const { income, expenses } = useBudget('mifal', mifalId);
   const [tab, setTab] = useState('tasks');
   const [editOpen, setEditOpen] = useState(false);
+
+  async function handleDelete() {
+    if (!confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${mifal.name || 'ללא שם'}"?`)) return;
+    const ok = await deleteMifal();
+    if (ok) router.push('/');
+  }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
   if (!mifal) return <p className="text-sm" style={{ color: C.rust }}>המפעל לא נמצא.</p>;
@@ -595,6 +608,7 @@ export default function MifalDetailView({ mifalId }) {
   const def = ALL_TYPES[mifal.type] || {};
   const Icon = def.icon;
   const isPrep = mifal.type === 'preparation';
+  const dateSingle = mifal.type === 'day_trip' || (isPrep && mifal.prep_date_mode === 'single');
 
   const expectedParticipants = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
   const actualParticipants = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
@@ -617,7 +631,10 @@ export default function MifalDetailView({ mifalId }) {
             {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
             <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
           </div>
-          <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
+          <div className="flex items-center gap-1">
+            <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
+            <IconButton icon={Trash2} tone="danger" title="מחיקת המפעל" onClick={handleDelete} />
+          </div>
         </div>
         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
@@ -627,7 +644,22 @@ export default function MifalDetailView({ mifalId }) {
           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
           <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
-          <InfoField label="תאריכים" value={dateRangeLabel(mifal)} />
+          {mifal.type === 'day_trip' ? (
+            <>
+              <InfoField label="סוג טיול" value={mifal.trip_type} />
+              <InfoField label="תאריך המפעל" value={formatDate(mifal.event_date)} />
+            </>
+          ) : dateSingle ? (
+            <InfoField label="תאריך ההכנה" value={formatDate(mifal.event_date)} />
+          ) : (
+            <>
+              <InfoField label={mifal.type === 'multi_day' ? 'סוג מחנה' : mifal.type === 'seminar' ? 'סוג סמינר' : 'הכנת מדריכים'} value={mifal.type === 'multi_day' ? mifal.camp_type : mifal.type === 'seminar' ? mifal.seminar_type : 'הכנה'} />
+              <InfoField label="תאריך המפעל - התחלה" value={formatDate(mifal.start_date)} />
+            </>
+          )}
+          {!dateSingle && <InfoField label="תאריך המפעל - סיום" value={formatDate(mifal.end_date)} />}
+          {dateSingle ? <InfoField label="תאריך גיבוי" value={formatDate(mifal.backup_date)} /> : <InfoField label="תאריך תחילת גיבוי" value={formatDate(mifal.backup_start_date)} />}
+          {!dateSingle && <InfoField label="תאריך סיום גיבוי" value={formatDate(mifal.backup_end_date)} />}
           <InfoField label="מיקום" value={mifal.accommodation} />
           <InfoField label="מסלולים" value={mifal.routes} />
           <InfoField label="הערות" value={mifal.comments} />

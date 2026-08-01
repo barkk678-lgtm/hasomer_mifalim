@@ -58,7 +58,12 @@ export function useMifalim() {
   }
 
   async function updateMifal(id, patch) {
-    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
+    // `patch` here is usually the edit modal's draft, seeded from a row out of `mifalim` —
+    // which carries the `participants`/`balance` fields this hook computes client-side above.
+    // Those aren't real columns; sending them through silently fails the whole update (Postgres
+    // rejects the unknown columns), which from the list screen looked like "edits don't save".
+    const { participants, balance, ...cleanPatch } = patch;
+    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
     setMifalim(prev => prev.map(m => (m.id === id ? { ...data, participants: m.participants, balance: m.balance } : m)));
     return data;

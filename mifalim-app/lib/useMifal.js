@@ -19,11 +19,18 @@ export function useMifal(id) {
   useEffect(() => { reload(); }, [reload]);
 
   async function updateMifal(patch) {
-    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
+    const { participants, balance, ...cleanPatch } = patch;
+    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
     setMifal(data);
     return data;
   }
 
-  return { mifal, loading, reload, updateMifal };
+  async function deleteMifal() {
+    const { error } = await supabase.from('mifalim').delete().eq('id', id);
+    if (error) { console.error('שגיאה במחיקת מפעל:', error); return false; }
+    return true;
+  }
+
+  return { mifal, loading, reload, updateMifal, deleteMifal };
 }

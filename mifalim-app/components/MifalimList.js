@@ -293,7 +293,7 @@ export default function MifalimList() {
                       <td className="px-4 py-3"><StatusBadge status={m.status} /></td>
                       <td className="px-4 py-3"><Badge tone={balance >= 0 ? 'good' : 'rust'}>{money(balance)}</Badge></td>
                       <td className="px-2 py-3 text-center">
-                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`למחוק את "${m.name || 'המפעל'}"?`)) deleteMifal(m.id); }} />
+                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${m.name || 'ללא שם'}"?`)) deleteMifal(m.id); }} />
                       </td>
                     </tr>
                   );

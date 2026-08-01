@@ -1,296 +1,203 @@
-diff --git a/mifalim-app/components/BusLogisticsTab.js b/mifalim-app/components/BusLogisticsTab.js
-new file mode 100644
-index 0000000..e592571
---- /dev/null
-+++ b/mifalim-app/components/BusLogisticsTab.js
-@@ -0,0 +1,130 @@
-+'use client';
-+import { useState } from 'react';
-+import { Plus, Trash2, Bus } from 'lucide-react';
-+import { useBusPlans } from '../lib/useBusPlans';
-+import { useBusPlanDetail } from '../lib/useBusPlanDetail';
-+import { C } from '../lib/designSystem';
-+import { Card, IconButton, TextInput, Field, InlineGrid } from './ui';
-+
-+// Groups needing pickup + bus types available — the structured input data an external
-+// allocation tool reads to compute the actual seating plan. The board itself (which group sits
-+// on which bus) is out of scope here on purpose: it's computed/maintained by that external tool,
-+// not edited by hand in this UI.
-+const GROUP_COLUMNS = [
-+  { key: 'pickup_point', label: "נק' איסוף", type: 'text' },
-+  { key: 'group_name', label: 'שם הקבוצה', type: 'text' },
-+  { key: 'quantity', label: 'כמות', type: 'number' },
-+];
-+function emptyGroupDraft() { return { pickup_point: '', group_name: '', quantity: '' }; }
-+
-+const BUS_TYPE_COLUMNS = [
-+  { key: 'label', label: 'שם סוג האוטובוס', type: 'text' },
-+  { key: 'capacity', label: 'קיבולת', type: 'number' },
-+];
-+function emptyBusTypeDraft() { return { label: '', capacity: '' }; }
-+
-+function BusPlanDetail({ plan, onUpdatePlan }) {
-+  const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup } = useBusPlanDetail(plan.id);
-+  const [destination, setDestination] = useState(plan.destination || '');
-+
-+  const totalPeople = groups.reduce((s, g) => s + (Number(g.quantity) || 0), 0);
-+  const totalCapacity = busTypes.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
-+  const hasBoard = board && board.board && Object.keys(board.board).length > 0;
-+
-+  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
-+
-+  return (
-+    <div>
-+      <Card title="קבוצות">
-+        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>הזנה ידנית ישירות בטבלה — כל שורה היא קבוצה שצריך לשבץ לאוטובוס.</p>
-+        <InlineGrid columns={GROUP_COLUMNS} rows={groups} makeEmptyDraft={emptyGroupDraft} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
-+        {groups.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} {groups.length} קבוצות, {totalPeople} איש.</p>}
-+      </Card>
-+
-+      <Card title="סוגי אוטובוסים זמינים">
-+        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>ניתן להגדיר כמה סוגים בקיבולות שונות.</p>
-+        <InlineGrid columns={BUS_TYPE_COLUMNS} rows={busTypes} makeEmptyDraft={emptyBusTypeDraft} onCreate={createBusType} onUpdate={updateBusType} onDelete={deleteBusType} />
-+        {busTypes.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} קיבולת: {totalCapacity} מקומות.</p>}
-+      </Card>
-+
-+      <Card title="יעד סופי">
-+        <Field label="יעד סופי">
-+          <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
-+        </Field>
-+      </Card>
-+
-+      <Card title="סידור בפועל">
-+        {hasBoard ? (
-+          <p className="text-sm" style={{ color: C.forestDark }}>
-+            קיים סידור פעיל לתוכנית זו{board.updated_at ? ` (עודכן לאחרונה ${new Date(board.updated_at).toLocaleString('he-IL')})` : ''}.
-+          </p>
-+        ) : (
-+          <p className="text-sm" style={{ color: C.inkSoft }}>טרם חושב סידור אוטובוסים לתוכנית זו.</p>
-+        )}
-+      </Card>
-+    </div>
-+  );
-+}
-+
-+export default function BusLogisticsTab({ mifalId }) {
-+  const { plans, loading, createPlan, updatePlan, deletePlan } = useBusPlans(mifalId);
-+  const [activeId, setActiveId] = useState(null);
-+  const [renamingId, setRenamingId] = useState(null);
-+  const [renameText, setRenameText] = useState('');
-+
-+  const activePlan = plans.find(p => p.id === activeId) || plans[0] || null;
-+
-+  async function addPlan() {
-+    const p = await createPlan(`תוכנית הסעה ${plans.length + 1}`);
-+    if (p) setActiveId(p.id);
-+  }
-+  function startRename(p) { setRenamingId(p.id); setRenameText(p.name); }
-+  function confirmRename() {
-+    if (renameText.trim()) updatePlan(renamingId, { name: renameText.trim() });
-+    setRenamingId(null);
-+  }
-+  function handleDeletePlan(id) {
-+    deletePlan(id);
-+    if (activePlan?.id === id) setActiveId(null);
-+  }
-+
-+  if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
-+
-+  return (
-+    <div>
-+      <div className="flex items-center gap-2 mb-2 flex-wrap">
-+        {plans.map(p => (
-+          <div key={p.id} className="flex items-center gap-1">
-+            {renamingId === p.id ? (
-+              <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onBlur={confirmRename} onKeyDown={e => e.key === 'Enter' && confirmRename()} className="text-xs px-2 py-1.5 rounded-lg" style={{ border: `1px solid ${C.line}` }} />
-+            ) : (
-+              <button
-+                onClick={() => setActiveId(p.id)}
-+                onDoubleClick={() => startRename(p)}
-+                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-+                style={activePlan?.id === p.id ? { background: C.forest, color: '#fff' } : { background: C.surface, color: C.inkSoft, border: `1px solid ${C.line}` }}
-+                title="לחיצה כפולה לשינוי שם התוכנית"
-+              >
-+                {p.name}
-+              </button>
-+            )}
-+            {activePlan?.id === p.id && <IconButton icon={Trash2} tone="danger" size={13} onClick={() => handleDeletePlan(p.id)} title="מחיקת תוכנית" />}
-+          </div>
-+        ))}
-+        <button onClick={addPlan} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.linkBlue, color: '#fff' }}>
-+          <Plus size={13} /> תוכנית הסעה חדשה
-+        </button>
-+      </div>
-+      <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>לחיצה כפולה על שם תוכנית משנה אותו (לדוגמה: {'"'}הסעה הלוך – יום א{"'"}{'"'}). לכל תוכנית יעד, סוגי אוטובוסים וקבוצות משלה.</p>
-+
-+      {!activePlan ? (
-+        <div className="text-center py-16 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>
-+          <Bus size={28} className="mx-auto mb-3" style={{ color: C.sage }} />
-+          אין עדיין תוכנית הסעה. לחצו על {'"'}תוכנית הסעה חדשה{'"'} כדי להתחיל.
-+        </div>
-+      ) : (
-+        <BusPlanDetail key={activePlan.id} plan={activePlan} onUpdatePlan={updatePlan} />
-+      )}
-+    </div>
-+  );
-+}
 diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
-index 27207dc..ae75413 100644
+index ae75413..299946d 100644
 --- a/mifalim-app/components/MifalDetailView.js
 +++ b/mifalim-app/components/MifalDetailView.js
-@@ -1,8 +1,9 @@
+@@ -1,6 +1,7 @@
  'use client';
  import { useState, useEffect } from 'react';
  import Link from 'next/link';
--import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download } from 'lucide-react';
-+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
++import { useRouter } from 'next/navigation';
+ import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
  import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
-+import BusLogisticsTab from './BusLogisticsTab';
- import { useMifal } from '../lib/useMifal';
- import { useMifalTasks } from '../lib/useMifalTasks';
- import { useBudget } from '../lib/useBudget';
-@@ -664,6 +665,9 @@ export default function MifalDetailView({ mifalId }) {
-             <CalendarDays size={14} /> מופעים
-           </button>
-         )}
-+        <button onClick={() => setTab('buses')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'buses' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-+          <Bus size={14} /> סידור אוטובוסים
-+        </button>
-         <button onClick={() => setTab('files')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={tab === 'files' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
-           <Upload size={14} /> קבצים
-         </button>
-@@ -672,6 +676,7 @@ export default function MifalDetailView({ mifalId }) {
-       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
-       {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
-       {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
-+      {tab === 'buses' && <BusLogisticsTab mifalId={mifal.id} />}
-       {tab === 'files' && <FilesTab mifalId={mifal.id} />}
-     </div>
-   );
-diff --git a/mifalim-app/lib/useBusPlanDetail.js b/mifalim-app/lib/useBusPlanDetail.js
-new file mode 100644
-index 0000000..237ecc3
---- /dev/null
-+++ b/mifalim-app/lib/useBusPlanDetail.js
-@@ -0,0 +1,71 @@
-+'use client';
-+import { useState, useEffect, useCallback } from 'react';
-+import { createClient } from './supabaseClient';
-+
-+// One bus plan's bus types + groups (the real, editable source data) plus the computed
-+// allocation board — the board itself is written elsewhere (an external allocation tool), this
-+// only reads it so the UI can show whether one exists yet.
-+export function useBusPlanDetail(planId) {
-+  const supabase = createClient();
-+  const [busTypes, setBusTypes] = useState([]);
-+  const [groups, setGroups] = useState([]);
-+  const [board, setBoard] = useState(null);
-+  const [loading, setLoading] = useState(true);
-+
-+  const reload = useCallback(async () => {
-+    if (!planId) return;
-+    setLoading(true);
-+    const [{ data: types, error: e1 }, { data: grps, error: e2 }, { data: boardRow, error: e3 }] = await Promise.all([
-+      supabase.from('bus_types').select('*').eq('bus_plan_id', planId),
-+      supabase.from('bus_groups').select('*').eq('bus_plan_id', planId),
-+      supabase.from('bus_boards').select('*').eq('bus_plan_id', planId).maybeSingle(),
-+    ]);
-+    if (e1) console.error('שגיאה בטעינת סוגי אוטובוסים:', e1);
-+    if (e2) console.error('שגיאה בטעינת קבוצות:', e2);
-+    if (e3) console.error('שגיאה בטעינת סידור אוטובוסים:', e3);
-+    setBusTypes(types || []);
-+    setGroups(grps || []);
-+    setBoard(boardRow || null);
-+    setLoading(false);
-+  }, [planId]);
-+
-+  useEffect(() => { reload(); }, [reload]);
-+
-+  async function createBusType(row) {
-+    const { data, error } = await supabase.from('bus_types').insert({ ...row, bus_plan_id: planId }).select().single();
-+    if (error) { console.error('שגיאה בהוספת סוג אוטובוס:', error); return null; }
-+    setBusTypes(prev => [...prev, data]);
-+    return data;
-+  }
-+  async function updateBusType(id, patch) {
-+    const { data, error } = await supabase.from('bus_types').update(patch).eq('id', id).select().single();
-+    if (error) { console.error('שגיאה בעדכון סוג אוטובוס:', error); return null; }
-+    setBusTypes(prev => prev.map(t => (t.id === id ? data : t)));
-+    return data;
-+  }
-+  async function deleteBusType(id) {
-+    const { error } = await supabase.from('bus_types').delete().eq('id', id);
-+    if (error) { console.error('שגיאה במחיקת סוג אוטובוס:', error); return; }
-+    setBusTypes(prev => prev.filter(t => t.id !== id));
+ import BusLogisticsTab from './BusLogisticsTab';
+@@ -401,7 +402,7 @@ function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categ
+ }
+ 
+ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
+-  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl } = useFiles('mifal', mifalId);
++  const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError } = useFiles('mifal', mifalId);
+   const [pages, setPages] = useState({});
+   const [dragCat, setDragCat] = useState(null);
+   const isFlat = categories.length === 1;
+@@ -429,6 +430,11 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
+           </label>
+         </div>
+       </div>
++      {uploadError && (
++        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
++          {uploadError}
++        </div>
++      )}
+       {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
+       {loading ? (
+         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
+@@ -583,18 +589,26 @@ function SummaryStat({ label, value, tone }) {
+ }
+ 
+ export default function MifalDetailView({ mifalId }) {
+-  const { mifal, loading, updateMifal } = useMifal(mifalId);
++  const router = useRouter();
++  const { mifal, loading, updateMifal, deleteMifal } = useMifal(mifalId);
+   const { tiers } = usePricingTiers(mifalId);
+   const { income, expenses } = useBudget('mifal', mifalId);
+   const [tab, setTab] = useState('tasks');
+   const [editOpen, setEditOpen] = useState(false);
+ 
++  async function handleDelete() {
++    if (!confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${mifal.name || 'ללא שם'}"?`)) return;
++    const ok = await deleteMifal();
++    if (ok) router.push('/');
 +  }
 +
-+  async function createGroup(row) {
-+    const { data, error } = await supabase.from('bus_groups').insert({ ...row, bus_plan_id: planId }).select().single();
-+    if (error) { console.error('שגיאה בהוספת קבוצה:', error); return null; }
-+    setGroups(prev => [...prev, data]);
-+    return data;
+   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
+   if (!mifal) return <p className="text-sm" style={{ color: C.rust }}>המפעל לא נמצא.</p>;
+ 
+   const def = ALL_TYPES[mifal.type] || {};
+   const Icon = def.icon;
+   const isPrep = mifal.type === 'preparation';
++  const dateSingle = mifal.type === 'day_trip' || (isPrep && mifal.prep_date_mode === 'single');
+ 
+   const expectedParticipants = tiers.reduce((s, t) => s + (Number(t.expected_participants) || 0), 0);
+   const actualParticipants = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0), 0);
+@@ -617,7 +631,10 @@ export default function MifalDetailView({ mifalId }) {
+             {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
+             <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
+           </div>
+-          <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
++          <div className="flex items-center gap-1">
++            <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
++            <IconButton icon={Trash2} tone="danger" title="מחיקת המפעל" onClick={handleDelete} />
++          </div>
+         </div>
+         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
+         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
+@@ -627,7 +644,22 @@ export default function MifalDetailView({ mifalId }) {
+           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
+           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
+           <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
+-          <InfoField label="תאריכים" value={dateRangeLabel(mifal)} />
++          {mifal.type === 'day_trip' ? (
++            <>
++              <InfoField label="סוג טיול" value={mifal.trip_type} />
++              <InfoField label="תאריך המפעל" value={formatDate(mifal.event_date)} />
++            </>
++          ) : dateSingle ? (
++            <InfoField label="תאריך ההכנה" value={formatDate(mifal.event_date)} />
++          ) : (
++            <>
++              <InfoField label={mifal.type === 'multi_day' ? 'סוג מחנה' : mifal.type === 'seminar' ? 'סוג סמינר' : 'הכנת מדריכים'} value={mifal.type === 'multi_day' ? mifal.camp_type : mifal.type === 'seminar' ? mifal.seminar_type : 'הכנה'} />
++              <InfoField label="תאריך המפעל - התחלה" value={formatDate(mifal.start_date)} />
++            </>
++          )}
++          {!dateSingle && <InfoField label="תאריך המפעל - סיום" value={formatDate(mifal.end_date)} />}
++          {dateSingle ? <InfoField label="תאריך גיבוי" value={formatDate(mifal.backup_date)} /> : <InfoField label="תאריך תחילת גיבוי" value={formatDate(mifal.backup_start_date)} />}
++          {!dateSingle && <InfoField label="תאריך סיום גיבוי" value={formatDate(mifal.backup_end_date)} />}
+           <InfoField label="מיקום" value={mifal.accommodation} />
+           <InfoField label="מסלולים" value={mifal.routes} />
+           <InfoField label="הערות" value={mifal.comments} />
+diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
+index c53d409..543445e 100644
+--- a/mifalim-app/components/MifalimList.js
++++ b/mifalim-app/components/MifalimList.js
+@@ -293,7 +293,7 @@ export default function MifalimList() {
+                       <td className="px-4 py-3"><StatusBadge status={m.status} /></td>
+                       <td className="px-4 py-3"><Badge tone={balance >= 0 ? 'good' : 'rust'}>{money(balance)}</Badge></td>
+                       <td className="px-2 py-3 text-center">
+-                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`למחוק את "${m.name || 'המפעל'}"?`)) deleteMifal(m.id); }} />
++                        <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${m.name || 'ללא שם'}"?`)) deleteMifal(m.id); }} />
+                       </td>
+                     </tr>
+                   );
+diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
+index 5cbed05..0ba535c 100644
+--- a/mifalim-app/lib/useFiles.js
++++ b/mifalim-app/lib/useFiles.js
+@@ -9,6 +9,7 @@ export function useFiles(ownerType, ownerId) {
+   const supabase = createClient();
+   const [files, setFiles] = useState([]);
+   const [loading, setLoading] = useState(true);
++  const [uploadError, setUploadError] = useState('');
+ 
+   const reload = useCallback(async () => {
+     if (!ownerId) return;
+@@ -25,23 +26,26 @@ export function useFiles(ownerType, ownerId) {
+     const files = Array.from(fileList || []);
+     if (!files.length) return [];
+     const uploaded = [];
++    setUploadError('');
+     try {
+-      const { data: { user } } = await supabase.auth.getUser();
++      const { data: { user }, error: authError } = await supabase.auth.getUser();
++      if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
+       for (const file of files) {
+         // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
+         // backends — sanitize the filename portion so uploads with those characters don't fail.
+         const safeName = file.name.replace(/[#?%]/g, '_');
+         const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
+-        const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file);
+-        if (uploadError) { console.error('שגיאה בהעלאת קובץ:', uploadError); continue; }
++        const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
++        if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
+         const { data, error } = await supabase.from('files').insert({
+           owner_type: ownerType, owner_id: ownerId, storage_path: path, name: file.name, size: file.size, category, modified_by: user?.id,
+         }).select('*, profiles(full_name)').single();
+-        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); continue; }
++        if (error) { console.error('שגיאה בשמירת פרטי קובץ:', error); setUploadError(`שגיאה בשמירת "${file.name}": ${error.message}`); continue; }
+         uploaded.push(data);
+       }
+     } catch (err) {
+       console.error('שגיאה בלתי צפויה בהעלאת קבצים:', err);
++      setUploadError(`שגיאה בלתי צפויה: ${err.message || err}`);
+     }
+     if (uploaded.length) setFiles(prev => [...uploaded, ...prev]);
+     return uploaded;
+@@ -67,5 +71,5 @@ export function useFiles(ownerType, ownerId) {
+     return data.signedUrl;
+   }
+ 
+-  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl };
++  return { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError };
+ }
+diff --git a/mifalim-app/lib/useMifal.js b/mifalim-app/lib/useMifal.js
+index bcb06b3..4ea0027 100644
+--- a/mifalim-app/lib/useMifal.js
++++ b/mifalim-app/lib/useMifal.js
+@@ -19,11 +19,18 @@ export function useMifal(id) {
+   useEffect(() => { reload(); }, [reload]);
+ 
+   async function updateMifal(patch) {
+-    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
++    const { participants, balance, ...cleanPatch } = patch;
++    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
+     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
+     setMifal(data);
+     return data;
+   }
+ 
+-  return { mifal, loading, reload, updateMifal };
++  async function deleteMifal() {
++    const { error } = await supabase.from('mifalim').delete().eq('id', id);
++    if (error) { console.error('שגיאה במחיקת מפעל:', error); return false; }
++    return true;
 +  }
-+  async function updateGroup(id, patch) {
-+    const { data, error } = await supabase.from('bus_groups').update(patch).eq('id', id).select().single();
-+    if (error) { console.error('שגיאה בעדכון קבוצה:', error); return null; }
-+    setGroups(prev => prev.map(g => (g.id === id ? data : g)));
-+    return data;
-+  }
-+  async function deleteGroup(id) {
-+    const { error } = await supabase.from('bus_groups').delete().eq('id', id);
-+    if (error) { console.error('שגיאה במחיקת קבוצה:', error); return; }
-+    setGroups(prev => prev.filter(g => g.id !== id));
-+  }
 +
-+  return { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup, reload };
-+}
-diff --git a/mifalim-app/lib/useBusPlans.js b/mifalim-app/lib/useBusPlans.js
-new file mode 100644
-index 0000000..56ef119
---- /dev/null
-+++ b/mifalim-app/lib/useBusPlans.js
-@@ -0,0 +1,44 @@
-+'use client';
-+import { useState, useEffect, useCallback } from 'react';
-+import { createClient } from './supabaseClient';
-+
-+// A mifal can have several bus plans (e.g. one per destination/direction) — this manages the
-+// plan list itself; useBusPlanDetail.js manages one plan's bus types + groups + board.
-+export function useBusPlans(mifalId) {
-+  const supabase = createClient();
-+  const [plans, setPlans] = useState([]);
-+  const [loading, setLoading] = useState(true);
-+
-+  const reload = useCallback(async () => {
-+    if (!mifalId) return;
-+    setLoading(true);
-+    const { data, error } = await supabase.from('bus_plans').select('*').eq('mifal_id', mifalId).order('created_at', { ascending: true });
-+    if (error) console.error('שגיאה בטעינת תוכניות הסעה:', error);
-+    setPlans(data || []);
-+    setLoading(false);
-+  }, [mifalId]);
-+
-+  useEffect(() => { reload(); }, [reload]);
-+
-+  async function createPlan(name) {
-+    const { data, error } = await supabase.from('bus_plans').insert({ mifal_id: mifalId, name }).select().single();
-+    if (error) { console.error('שגיאה ביצירת תוכנית הסעה:', error); return null; }
-+    setPlans(prev => [...prev, data]);
-+    return data;
-+  }
-+
-+  async function updatePlan(id, patch) {
-+    const { data, error } = await supabase.from('bus_plans').update(patch).eq('id', id).select().single();
-+    if (error) { console.error('שגיאה בעדכון תוכנית הסעה:', error); return null; }
-+    setPlans(prev => prev.map(p => (p.id === id ? data : p)));
-+    return data;
-+  }
-+
-+  async function deletePlan(id) {
-+    const { error } = await supabase.from('bus_plans').delete().eq('id', id);
-+    if (error) { console.error('שגיאה במחיקת תוכנית הסעה:', error); return; }
-+    setPlans(prev => prev.filter(p => p.id !== id));
-+  }
-+
-+  return { plans, loading, createPlan, updatePlan, deletePlan };
-+}
++  return { mifal, loading, reload, updateMifal, deleteMifal };
+ }
+diff --git a/mifalim-app/lib/useMifalim.js b/mifalim-app/lib/useMifalim.js
+index 404c9ac..bd45f75 100644
+--- a/mifalim-app/lib/useMifalim.js
++++ b/mifalim-app/lib/useMifalim.js
+@@ -58,7 +58,12 @@ export function useMifalim() {
+   }
+ 
+   async function updateMifal(id, patch) {
+-    const { data, error } = await supabase.from('mifalim').update(patch).eq('id', id).select().single();
++    // `patch` here is usually the edit modal's draft, seeded from a row out of `mifalim` —
++    // which carries the `participants`/`balance` fields this hook computes client-side above.
++    // Those aren't real columns; sending them through silently fails the whole update (Postgres
++    // rejects the unknown columns), which from the list screen looked like "edits don't save".
++    const { participants, balance, ...cleanPatch } = patch;
++    const { data, error } = await supabase.from('mifalim').update(cleanPatch).eq('id', id).select().single();
+     if (error) { console.error('שגיאה בעדכון מפעל:', error); return null; }
+     setMifalim(prev => prev.map(m => (m.id === id ? { ...data, participants: m.participants, balance: m.balance } : m)));
+     return data;
