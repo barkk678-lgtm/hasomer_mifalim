@@ -41,7 +41,11 @@ function WeekRow({ days, events, onOpen, isLast }) {
   const maxLanes = Math.max(1, lanes.length);
   return (
     <div style={{ borderBottom: isLast ? 'none' : `1px solid ${C.line}` }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: `26px repeat(${maxLanes},20px)`, gap: 1, padding: 2, background: C.line }}>
+      {/* rowGap:0 (only columnGap keeps the CSS-grid background-through-gap trick) removes the
+          horizontal line that used to cut across each day cell, between the date number and the
+          event bars below it — the cell reads as one piece now, day-to-day vertical separators
+          are unaffected. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridTemplateRows: `26px repeat(${maxLanes},20px)`, rowGap: 0, columnGap: 1, padding: 2, background: C.line }}>
         {days.map((d, i) => (
           <div key={i} style={{ gridColumn: i + 1, gridRow: 1, opacity: d.inMonth ? 1 : 0.35, paddingRight: 3, background: C.surface }}>
             <div className="text-xs font-semibold" style={NUMFONT}>{d.date.getDate()}</div>
@@ -64,18 +68,40 @@ function WeekRow({ days, events, onOpen, isLast }) {
   );
 }
 
+function MonthGrid({ monthDate, events, onOpen, label }) {
+  const year = monthDate.getFullYear(), month = monthDate.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const gridStart = new Date(firstOfMonth); gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+  const allDays = [];
+  for (let i = 0; i < 42; i++) { const d = new Date(gridStart); d.setDate(d.getDate() + i); allDays.push({ date: d, inMonth: d.getMonth() === month, holiday: HOLIDAYS[toISO(d)] }); }
+  const weeks = []; for (let i = 0; i < 6; i++) weeks.push(allDays.slice(i * 7, i * 7 + 7));
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-semibold" style={{ color: C.forestDark }}>{monthDate.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}</span>
+        {label && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.ochreSoft, color: '#6B4C16' }}>{label}</span>}
+      </div>
+      <div className="grid grid-cols-7 gap-0 rounded-t-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, borderBottom: 'none' }}>
+        {HEB_WEEKDAYS.map(w => <div key={w} className="text-center text-xs font-bold py-1.5" style={{ color: '#fff', background: C.forest }}>{w}</div>)}
+      </div>
+      <div className="rounded-b-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+        {weeks.map((week, i) => <WeekRow key={i} days={week} events={events} onOpen={onOpen} isLast={i === weeks.length - 1} />)}
+      </div>
+    </div>
+  );
+}
+
 // Shared, single source of truth for both the master Calendar page and any contextual calendar view.
+// Shows the current month plus the following month stacked below it, so a busy end-of-month week
+// doesn't need a page/cursor change to see what's coming right after it.
 export default function CalendarView({ mifalim, onOpen, cursor: controlledCursor, setCursor: controlledSetCursor }) {
   const [innerCursor, setInnerCursor] = useState(new Date());
   const cursor = controlledCursor || innerCursor;
   const setCursor = controlledSetCursor || setInnerCursor;
 
   const year = cursor.getFullYear(), month = cursor.getMonth();
-  const firstOfMonth = new Date(year, month, 1);
-  const gridStart = new Date(firstOfMonth); gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-  const allDays = [];
-  for (let i = 0; i < 42; i++) { const d = new Date(gridStart); d.setDate(d.getDate() + i); allDays.push({ date: d, inMonth: d.getMonth() === month, holiday: HOLIDAYS[toISO(d)] }); }
-  const weeks = []; for (let i = 0; i < 6; i++) weeks.push(allDays.slice(i * 7, i * 7 + 7));
+  const nextMonthDate = new Date(year, month + 1, 1);
   const events = buildEvents(mifalim);
 
   return (
@@ -93,9 +119,9 @@ export default function CalendarView({ mifalim, onOpen, cursor: controlledCursor
           <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: C.linkBlue }} />הכנת מדריכים</span>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-0 rounded-t-lg overflow-hidden" style={{ border: `1px solid ${C.line}`, borderBottom: 'none' }}>{HEB_WEEKDAYS.map(w => <div key={w} className="text-center text-xs font-bold py-1.5" style={{ color: '#fff', background: C.forest }}>{w}</div>)}</div>
-      <div className="rounded-b-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-        {weeks.map((week, i) => <WeekRow key={i} days={week} events={events} onOpen={onOpen} isLast={i === weeks.length - 1} />)}
+      <div className="flex flex-col gap-6">
+        <MonthGrid monthDate={cursor} events={events} onOpen={onOpen} />
+        <MonthGrid monthDate={nextMonthDate} events={events} onOpen={onOpen} label="החודש הבא" />
       </div>
     </div>
   );
