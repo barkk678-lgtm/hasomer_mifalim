@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2 } from 'lucide-react';
 import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
 import { exportToExcel } from '../lib/exportExcel';
@@ -208,23 +209,52 @@ export function ExportButton({ rows, columns, filename }) {
 }
 
 // Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range' | 'date-range'.
+// The popover itself renders through a portal into document.body, positioned by the trigger
+// button's real screen coordinates — table header cells sit inside an `overflow-hidden` wrapper
+// (so the table's own rounded corners clip cleanly), which was clipping the popover before it
+// could reach its full height, cutting off the second date input in a date-range filter.
 export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const popoverRef = useRef(null);
+
   useEffect(() => {
-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function h(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (popoverRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) { setPos(null); return; }
+    function computePosition() {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    computePosition();
+    window.addEventListener('scroll', computePosition, true);
+    window.addEventListener('resize', computePosition);
+    return () => { window.removeEventListener('scroll', computePosition, true); window.removeEventListener('resize', computePosition); };
+  }, [open]);
+
   const isActive = type === 'text' ? !!value : type === 'select' ? value !== 'all' : Array.isArray(value) ? (value[0] !== '' || value[1] !== '') : false;
   return (
-    <div className="relative inline-flex items-center gap-1" ref={ref}>
+    <div className="relative inline-flex items-center gap-1" ref={btnRef}>
       {onSort ? (
         <button className="flex items-center gap-1" onClick={() => onSort(sortKey)}>{label}<ArrowUpDown size={11} style={{ opacity: activeSortKey === sortKey ? 1 : 0.4 }} /></button>
       ) : <span>{label}</span>}
       <button onClick={() => setOpen(o => !o)} title="סינון" className="p-0.5 rounded"><Filter size={11} style={{ color: isActive ? C.ochreSoft : 'rgba(255,255,255,0.6)' }} /></button>
-      {open && (
-        <div onClick={e => e.stopPropagation()} className="absolute z-30 top-full mt-1 right-0 rounded-lg shadow-lg p-3" style={{ background: C.surface, border: `1px solid ${C.line}`, minWidth: 190 }}>
+      {open && pos && createPortal(
+        <div
+          ref={popoverRef}
+          onClick={e => e.stopPropagation()}
+          className="rounded-lg shadow-lg p-3"
+          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, minWidth: 190, background: C.surface, border: `1px solid ${C.line}` }}
+        >
           {type === 'text' && (
             <input autoFocus value={value} onChange={e => onChange(e.target.value)} placeholder="הקלד לסינון..." className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
           )}
@@ -248,7 +278,8 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
               <input type="date" value={value[1]} onChange={e => onChange([value[0], e.target.value])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

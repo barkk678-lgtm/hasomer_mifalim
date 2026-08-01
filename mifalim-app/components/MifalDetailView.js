@@ -417,13 +417,6 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצי {isFlat ? 'הפרויקט' : 'המפעל'}</h3>
         <div className="flex items-center gap-2">
-          {files.length > 0 && (
-            <ExportButton
-              rows={files.map(f => ({ ...f, modified_by: f.profiles?.full_name || '—' }))}
-              filename="קבצים.xlsx"
-              columns={[{ key: 'name', label: 'שם' }, { key: 'category', label: 'קטגוריה' }, { key: 'modified_at', label: 'עודכן' }, { key: 'modified_by', label: 'עודכן ע"י' }]}
-            />
-          )}
           <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
             העלאת קובץ
             <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, categories[0]); e.target.value = ''; }} />
@@ -522,7 +515,7 @@ const EXPENSE_COLUMNS = [
 function emptyExpenseDraft() { return { expense_name: '', expense_type: '', supplier_name: '', quantity: '', unit_price: '' }; }
 
 function BudgetTab({ mifalId }) {
-  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense } = useBudget('mifal', mifalId);
+  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError } = useBudget('mifal', mifalId);
   const { tiers } = usePricingTiers(mifalId);
 
   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
@@ -534,6 +527,11 @@ function BudgetTab({ mifalId }) {
 
   return (
     <div>
+      {budgetError && (
+        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
+          {budgetError}
+        </div>
+      )}
       <div className="flex gap-2 mb-4">
         <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.greenGoodSoft, border: `1px solid ${C.greenGood}40` }}>
           <div className="text-[10px] font-semibold" style={{ color: C.greenGood }}>סה"כ הכנסה (כולל הרשמה)</div>

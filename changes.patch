@@ -1,513 +1,220 @@
-diff --git a/mifalim-app/components/MifalimList.js b/mifalim-app/components/MifalimList.js
-index 543445e..3c9107a 100644
---- a/mifalim-app/components/MifalimList.js
-+++ b/mifalim-app/components/MifalimList.js
-@@ -8,9 +8,12 @@ import { Field, TextInput, TextArea, Select, Badge, StatusBadge, IconButton, Car
- import CrossFilterDonutChart from './CrossFilterDonutChart';
+diff --git a/mifalim-app/components/MifalDetailView.js b/mifalim-app/components/MifalDetailView.js
+index 299946d..7015278 100644
+--- a/mifalim-app/components/MifalDetailView.js
++++ b/mifalim-app/components/MifalDetailView.js
+@@ -417,13 +417,6 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
+       <div className="flex items-center justify-between mb-3">
+         <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצי {isFlat ? 'הפרויקט' : 'המפעל'}</h3>
+         <div className="flex items-center gap-2">
+-          {files.length > 0 && (
+-            <ExportButton
+-              rows={files.map(f => ({ ...f, modified_by: f.profiles?.full_name || '—' }))}
+-              filename="קבצים.xlsx"
+-              columns={[{ key: 'name', label: 'שם' }, { key: 'category', label: 'קטגוריה' }, { key: 'modified_at', label: 'עודכן' }, { key: 'modified_by', label: 'עודכן ע"י' }]}
+-            />
+-          )}
+           <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
+             העלאת קובץ
+             <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, categories[0]); e.target.value = ''; }} />
+@@ -522,7 +515,7 @@ const EXPENSE_COLUMNS = [
+ function emptyExpenseDraft() { return { expense_name: '', expense_type: '', supplier_name: '', quantity: '', unit_price: '' }; }
  
- function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
--function isSingleDateType(m) { return m.type === 'day_trip'; }
-+function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
-+function startDateOf(m) {
-+  return m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
-+}
- function dateRangeLabel(m) {
--  const start = m.date_mode === 'backup' ? (isSingleDateType(m) ? m.backup_date : m.backup_start_date) : (isSingleDateType(m) ? m.event_date : m.start_date);
-+  const start = startDateOf(m);
-   const end = isSingleDateType(m) ? start : (m.date_mode === 'backup' ? m.backup_end_date : m.end_date);
-   if (!start) return '—';
-   const fmt = d => { if (!d) return '?'; const [y, mo, da] = d.split('-'); return `${da}/${mo}/${y}`; };
-@@ -158,6 +161,7 @@ export default function MifalimList() {
-   const [statusFilter, setStatusFilter] = useState('all');
-   const [pRange, setPRange] = useState(['', '']);
-   const [bRange, setBRange] = useState(['', '']);
-+  const [dateFilter, setDateFilter] = useState(['', '']);
-   const [sortKey, setSortKey] = useState(null);
-   const [sortDir, setSortDir] = useState('asc');
-   const editingMifal = mifalim.find(m => m.id === editId);
-@@ -172,20 +176,23 @@ export default function MifalimList() {
-     const bal = Number(m.balance) || 0;
-     if (bRange[0] !== '' && bal < Number(bRange[0])) return false;
-     if (bRange[1] !== '' && bal > Number(bRange[1])) return false;
-+    const start = startDateOf(m);
-+    if (dateFilter[0] !== '' && (!start || start < dateFilter[0])) return false;
-+    if (dateFilter[1] !== '' && (!start || start > dateFilter[1])) return false;
-     return true;
-   }
+ function BudgetTab({ mifalId }) {
+-  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense } = useBudget('mifal', mifalId);
++  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError } = useBudget('mifal', mifalId);
+   const { tiers } = usePricingTiers(mifalId);
  
-   const typeChartData = useMemo(() => {
-     const src = mifalim.filter(m => passBaseFilters(m) && (!roleFilter || m.lead_role === roleFilter));
-     return Object.entries(ALL_TYPES).map(([key, def]) => ({ key, name: def.label, value: src.filter(m => m.type === key).length })).filter(t => t.value > 0);
--  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
-+  }, [mifalim, roleFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
- 
-   const roleChartData = useMemo(() => {
-     const src = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter));
-     const counts = {};
-     src.forEach(m => { const key = m.lead_role || 'לא הוגדר'; counts[key] = (counts[key] || 0) + 1; });
-     return Object.entries(counts).map(([name, value]) => ({ key: name, name, value }));
--  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange]);
-+  }, [mifalim, typeFilter, activeOnly, statusFilter, nameFilter, pRange, bRange, dateFilter]);
- 
-   const filtered = mifalim.filter(m => passBaseFilters(m) && (!typeFilter || m.type === typeFilter) && (!roleFilter || m.lead_role === roleFilter));
-   const sorted = useMemo(() => {
-@@ -199,7 +206,7 @@ export default function MifalimList() {
-   }, [filtered, sortKey, sortDir]);
-   function toggleSort(key) { setSortKey(k => { if (k !== key) { setSortDir('asc'); return key; } setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return key; }); }
- 
--  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '';
-+  const anyFilter = typeFilter || roleFilter || statusFilter !== 'all' || nameFilter || pRange[0] !== '' || pRange[1] !== '' || bRange[0] !== '' || bRange[1] !== '' || dateFilter[0] !== '' || dateFilter[1] !== '';
+   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
+@@ -534,6 +527,11 @@ function BudgetTab({ mifalId }) {
  
    return (
      <div>
-@@ -211,7 +218,7 @@ export default function MifalimList() {
-       <div className="mb-4 flex items-center gap-3">
-         <ToggleSwitch value={activeOnly ? 'active' : 'all'} onChange={v => setActiveOnly(v === 'active')} leftLabel="כל המפעלים" rightLabel="מפעלים פעילים" leftValue="all" rightValue="active" />
-         {anyFilter && (
--          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
-+          <button onClick={() => { setTypeFilter(null); setRoleFilter(null); setStatusFilter('all'); setNameFilter(''); setPRange(['', '']); setBRange(['', '']); setDateFilter(['', '']); }} className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ background: C.rustSoft, color: C.rust }}>נקה סינון ✕</button>
-         )}
-       </div>
- 
-@@ -260,9 +267,15 @@ export default function MifalimList() {
-                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-                     <HeaderFilterPopover label="שם המפעל" type="text" value={nameFilter} onChange={setNameFilter} sortKey="name" activeSortKey={sortKey} onSort={toggleSort} />
-                   </th>
--                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('type')}>סוג <ArrowUpDown size={11} style={{ opacity: sortKey === 'type' ? 1 : 0.4 }} /></button></th>
--                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white"><button className="flex items-center gap-1" onClick={() => toggleSort('lead_role')}>אחראי <ArrowUpDown size={11} style={{ opacity: sortKey === 'lead_role' ? 1 : 0.4 }} /></button></th>
--                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">תאריכים</th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="סוג" type="select" value={typeFilter || 'all'} onChange={v => setTypeFilter(v === 'all' ? null : v)} options={Object.entries(ALL_TYPES).map(([key, def]) => ({ value: key, label: def.label }))} sortKey="type" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="אחראי" type="select" value={roleFilter || 'all'} onChange={v => setRoleFilter(v === 'all' ? null : v)} options={LEAD_ROLES.map(r => ({ value: r, label: r }))} sortKey="lead_role" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-+                    <HeaderFilterPopover label="תאריכים" type="date-range" value={dateFilter} onChange={setDateFilter} sortKey="date" activeSortKey={sortKey} onSort={toggleSort} />
-+                  </th>
-                   <th className="text-right px-4 py-2.5 text-xs font-semibold text-white">
-                     <HeaderFilterPopover label="משתתפים" type="range" value={pRange} onChange={setPRange} sortKey="participants" activeSortKey={sortKey} onSort={toggleSort} />
-                   </th>
-diff --git a/mifalim-app/components/TasksPage.js b/mifalim-app/components/TasksPage.js
-index dfbaef9..227973d 100644
---- a/mifalim-app/components/TasksPage.js
-+++ b/mifalim-app/components/TasksPage.js
-@@ -1,10 +1,12 @@
- 'use client';
--import { useState } from 'react';
--import { Plus, Trash2, Pencil } from 'lucide-react';
-+import { useState, useEffect } from 'react';
-+import { useRouter } from 'next/navigation';
-+import { Plus, Trash2, Pencil, ChevronDown } from 'lucide-react';
- import { useTasks } from '../lib/useTasks';
- import { useMifalim } from '../lib/useMifalim';
--import { C } from '../lib/designSystem';
--import { Field, TextInput, Select, IconButton, Card, Modal } from './ui';
-+import { useStakeholders } from '../lib/useStakeholders';
-+import { C, ACTIVE_STATUSES } from '../lib/designSystem';
-+import { Field, TextInput, TextArea, Select, IconButton, Card, Modal, StatusBadge, ExportButton } from './ui';
- 
- function formatDate(iso) {
-   if (!iso) return '';
-@@ -34,22 +36,53 @@ const URGENCY_STYLE = {
-   normal: { bg: C.surface, border: C.line },
- };
- 
--function emptyDraft(mifalim) {
--  return { mifal_id: mifalim[0]?.id || '', task_name: '', assigned_to: '', deadline: '' };
-+function isSingleDateType(m) { return m.type === 'day_trip' || (m.type === 'preparation' && m.prep_date_mode === 'single'); }
-+function getRelevantDates(m) {
-+  if (isSingleDateType(m)) { const d = m.date_mode === 'backup' ? m.backup_date : m.event_date; return { start: d, end: d }; }
-+  const start = m.date_mode === 'backup' ? m.backup_start_date : m.start_date;
-+  const end = m.date_mode === 'backup' ? m.backup_end_date : m.end_date;
-+  return { start, end };
-+}
-+function effectiveStatus(m) {
-+  if (m.status === 'בוטל' || m.status === 'הסתיים') return m.status;
-+  const today = new Date(); today.setHours(0, 0, 0, 0);
-+  const { end } = getRelevantDates(m);
-+  if (end) { const endD = new Date(end); if (today > endD) return 'ממתין להפקת לקחים'; }
-+  if (m.work_start_date) { const wsd = new Date(m.work_start_date); if (today >= wsd) return 'בעבודה'; }
-+  return m.status || 'מתוכנן';
-+}
-+
-+function StatCard({ label, value, tone }) {
-+  return (
-+    <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-+      <div className="text-lg font-bold" style={{ color: tone === 'rust' ? C.rust : C.forestDark }}>{value}</div>
-+      <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>{label}</div>
-+    </div>
-+  );
- }
- 
--function CreateTaskModal({ open, onClose, mifalim, onCreate }) {
--  const [draft, setDraft] = useState(emptyDraft(mifalim));
-+function TaskFormModal({ open, onClose, activeMifalim, editing, onCreate, onUpdate }) {
-+  const [mifalId, setMifalId] = useState('');
-+  const [taskName, setTaskName] = useState('');
-+  const [assignedTo, setAssignedTo] = useState('');
-+  const [deadline, setDeadline] = useState('');
-+  const [comments, setComments] = useState('');
-   const [saving, setSaving] = useState(false);
-+  const { stakeholders } = useStakeholders(mifalId);
- 
--  function set(patch) { setDraft(d => ({ ...d, ...patch })); }
-+  useEffect(() => {
-+    if (open) {
-+      if (editing) { setMifalId(editing.mifal_id); setTaskName(editing.task_name || ''); setAssignedTo(editing.assigned_to || ''); setDeadline(editing.deadline || ''); setComments(editing.comments || ''); }
-+      else { setMifalId(activeMifalim[0]?.id || ''); setTaskName(''); setAssignedTo(''); setDeadline(''); setComments(''); }
-+    }
-+  }, [open, editing]);
- 
--  async function handleSave() {
--    if (!draft.task_name.trim() || !draft.mifal_id) return;
-+  async function save() {
-+    if (!mifalId || !taskName.trim()) return;
-     setSaving(true);
--    await onCreate({ ...draft, is_completed: false });
-+    if (editing) await onUpdate(editing.id, { mifal_id: mifalId, task_name: taskName, assigned_to: assignedTo, deadline: deadline || null, comments });
-+    else await onCreate({ mifal_id: mifalId, task_name: taskName, assigned_to: assignedTo, deadline: deadline || null, comments, is_completed: false });
-     setSaving(false);
--    setDraft(emptyDraft(mifalim));
-     onClose();
-   }
- 
-@@ -57,113 +90,170 @@ function CreateTaskModal({ open, onClose, mifalim, onCreate }) {
-     <Modal
-       open={open}
-       onClose={onClose}
--      title="יצירת משימה חדשה"
-+      title={editing ? 'עריכת משימה' : 'יצירת משימה חדשה'}
-       footer={
-         <>
-           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ color: C.inkSoft }}>ביטול</button>
--          <button disabled={saving || !draft.task_name.trim() || !draft.mifal_id} onClick={handleSave} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !draft.task_name.trim() ? 0.6 : 1 }}>
--            {saving ? 'שומר...' : 'יצירה'}
-+          <button disabled={saving || !mifalId || !taskName.trim()} onClick={save} className="px-5 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: C.forest, opacity: saving || !mifalId || !taskName.trim() ? 0.6 : 1 }}>
-+            {saving ? 'שומר...' : editing ? 'שמירה' : 'יצירה'}
-           </button>
-         </>
-       }
-     >
-       <div className="flex flex-col gap-4">
-         <Field label="שיוך למפעל">
--          <Select value={draft.mifal_id} onChange={e => set({ mifal_id: e.target.value })}>
--            {mifalim.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-+          <Select value={mifalId} onChange={e => setMifalId(e.target.value)}>
-+            {activeMifalim.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-           </Select>
-         </Field>
--        <Field label="שם המשימה">
--          <TextInput value={draft.task_name} onChange={e => set({ task_name: e.target.value })} />
--        </Field>
-+        <Field label="שם המשימה"><TextInput value={taskName} onChange={e => setTaskName(e.target.value)} /></Field>
-         <Field label="אחראי">
--          <TextInput value={draft.assigned_to} onChange={e => set({ assigned_to: e.target.value })} />
--        </Field>
--        <Field label="תאריך יעד">
--          <TextInput type="date" value={draft.deadline} onChange={e => set({ deadline: e.target.value })} />
-+          {stakeholders.length > 0 ? (
-+            <Select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-+              <option value="">לא משויך</option>
-+              {stakeholders.map(s => <option key={s.id} value={s.full_name}>{s.full_name}</option>)}
-+            </Select>
-+          ) : (
-+            <TextInput value={assignedTo} onChange={e => setAssignedTo(e.target.value)} />
-+          )}
-         </Field>
-+        <Field label="תאריך יעד"><TextInput type="date" value={deadline} onChange={e => setDeadline(e.target.value)} /></Field>
-+        <Field label="הערות"><TextArea value={comments} onChange={e => setComments(e.target.value)} /></Field>
-       </div>
-     </Modal>
-   );
- }
- 
- export default function TasksPage() {
-+  const router = useRouter();
-   const { tasks, loading, createTask, updateTask, deleteTask } = useTasks();
-   const { mifalim, loading: mifalimLoading } = useMifalim();
-+  const [statusFilter, setStatusFilter] = useState('open');
-+  const [expanded, setExpanded] = useState({});
-   const [createOpen, setCreateOpen] = useState(false);
--  const [showAll, setShowAll] = useState(false);
-+  const [editingTask, setEditingTask] = useState(null);
-+
-+  const activeMifalim = mifalim.filter(m => ACTIVE_STATUSES.includes(effectiveStatus(m)));
-+  const activeIds = new Set(activeMifalim.map(m => m.id));
-+
-+  const groups = activeMifalim.map(m => {
-+    const mifalTasks = tasks.filter(t => t.mifal_id === m.id);
-+    const shown = statusFilter === 'open' ? mifalTasks.filter(t => !t.is_completed) : mifalTasks;
-+    return { mifal: m, tasks: shown };
-+  }).filter(g => g.tasks.length > 0 || statusFilter === 'all');
-+
-+  const visibleTasksFlat = groups.flatMap(g => g.tasks);
-+  const openCount = tasks.filter(t => activeIds.has(t.mifal_id) && !t.is_completed).length;
-+  const overdueCount = tasks.filter(t => activeIds.has(t.mifal_id) && taskUrgency(t) === 'overdue').length;
-+
-+  function toggleExpand(id) { setExpanded(e => ({ ...e, [id]: e[id] === false ? true : false })); }
-+  function isExpanded(id) { return expanded[id] !== false; }
- 
--  const visible = showAll ? tasks : tasks.filter(t => !t.is_completed);
--  const openCount = tasks.filter(t => !t.is_completed).length;
--  const overdueCount = tasks.filter(t => taskUrgency(t) === 'overdue').length;
-+  const exportRows = [];
-+  groups.forEach(g => g.tasks.forEach(t => exportRows.push({ ...t, mifalName: g.mifal.name })));
-+
-+  const loadingAny = loading || mifalimLoading;
- 
-   return (
-     <div>
-       <h1 className="text-2xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>משימות מכלל המפעלים</h1>
- 
--      {!mifalimLoading && <CreateTaskModal open={createOpen} onClose={() => setCreateOpen(false)} mifalim={mifalim} onCreate={createTask} />}
-+      {!mifalimLoading && (
-+        <>
-+          <TaskFormModal open={createOpen} onClose={() => setCreateOpen(false)} activeMifalim={activeMifalim} editing={null} onCreate={createTask} onUpdate={updateTask} />
-+          <TaskFormModal open={!!editingTask} onClose={() => setEditingTask(null)} activeMifalim={activeMifalim} editing={editingTask} onCreate={createTask} onUpdate={updateTask} />
-+        </>
-+      )}
- 
--      <div className="grid grid-cols-2 gap-4 mb-4">
--        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
--          <div className="text-lg font-bold" style={{ color: C.forestDark }}>{openCount}</div>
--          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות פתוחות</div>
--        </div>
--        <div className="rounded-xl p-3.5 text-center" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
--          <div className="text-lg font-bold" style={{ color: C.rust }}>{overdueCount}</div>
--          <div className="text-[11px] font-semibold mt-1" style={{ color: C.inkSoft }}>משימות בחריגה</div>
--        </div>
-+      <div className="flex justify-end mb-2">
-+        <button onClick={() => setStatusFilter(f => (f === 'open' ? 'all' : 'open'))} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
-+          {statusFilter === 'open' ? 'הצג את כל המשימות הפעילות' : 'הצג משימות פתוחות בלבד'}
-+        </button>
-+      </div>
-+
-+      <div className="grid grid-cols-3 gap-4 mb-4">
-+        <StatCard label="כמות מפעלים פעילים" value={groups.length} />
-+        <StatCard label="כמות משימות פתוחות" value={openCount} />
-+        <StatCard label="כמות משימות בחריגה" value={overdueCount} tone="rust" />
-       </div>
- 
-       <div className="flex items-center justify-between mb-2">
--        <button onClick={() => setCreateOpen(true)} disabled={mifalim.length === 0} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest, opacity: mifalim.length === 0 ? 0.6 : 1 }}>
-+        <button onClick={() => setCreateOpen(true)} disabled={activeMifalim.length === 0} className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: C.forest, opacity: activeMifalim.length === 0 ? 0.6 : 1 }}>
-           <Plus size={16} /> יצירת משימה חדשה
-         </button>
--        <button onClick={() => setShowAll(s => !s)} className="px-3 py-2 rounded-lg text-xs font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
--          {showAll ? 'הצג משימות פתוחות בלבד' : 'הצג את כל המשימות'}
--        </button>
--      </div>
--      {mifalim.length === 0 && <p className="text-xs mb-2" style={{ color: C.inkSoft }}>צריך קודם ליצור מפעל אחד לפחות ב"כל המפעלים" כדי לשייך אליו משימות.</p>}
--
--      <Card>
--        {loading ? (
--          <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
--        ) : visible.length === 0 ? (
--          <div className="text-center py-16 rounded-xl" style={{ background: C.paper, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין משימות להצגה</div>
--        ) : (
--          <table className="w-full text-sm border-collapse">
--            <thead>
--              <tr style={{ background: '#E3E4D6' }}>
--                {['משימה', 'מפעל', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map(h => (
--                  <th key={h} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
--                ))}
--              </tr>
--            </thead>
--            <tbody>
--              {visible.map(t => {
--                const u = URGENCY_STYLE[taskUrgency(t)];
--                return (
--                  <tr key={t.id} style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
--                    <td className="px-4 py-2.5" style={{ color: C.ink }}>{t.task_name}</td>
--                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.mifalim?.name || '—'}</td>
--                    <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
--                    <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
--                    <td className="px-4 py-2.5">
--                      <button
--                        onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
--                        className="px-2.5 py-1 rounded-full text-xs font-semibold"
--                        style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
--                      >
--                        {t.is_completed ? 'הושלם' : 'פתוח'}
--                      </button>
--                    </td>
--                    <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
--                  </tr>
--                );
--              })}
--            </tbody>
--          </table>
-+        {exportRows.length > 0 && (
-+          <ExportButton
-+            rows={exportRows}
-+            filename="משימות.xlsx"
-+            columns={[
-+              { key: 'mifalName', label: 'מפעל' },
-+              { key: 'task_name', label: 'משימה' },
-+              { key: 'assigned_to', label: 'אחראי' },
-+              { key: 'deadline', label: 'תאריך יעד', value: t => formatDate(t.deadline) },
-+              { key: 'is_completed', label: 'סטטוס', value: t => (t.is_completed ? 'הושלם' : 'פתוח') },
-+            ]}
-+          />
-         )}
--      </Card>
-+      </div>
-+      {activeMifalim.length === 0 && !mifalimLoading && <p className="text-xs mb-2" style={{ color: C.inkSoft }}>אין כרגע מפעלים פעילים לשייך אליהם משימות.</p>}
-+
-+      {loadingAny ? (
-+        <Card><p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p></Card>
-+      ) : groups.length === 0 ? (
-+        <div className="text-center py-16 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין משימות להצגה</div>
-+      ) : (
-+        <div className="flex flex-col gap-2">
-+          {groups.map(g => {
-+            const open = isExpanded(g.mifal.id);
-+            return (
-+              <div key={g.mifal.id} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-+                <div className="flex items-center justify-between px-4 py-2.5 cursor-pointer" style={{ background: '#E3E4D6' }} onClick={() => toggleExpand(g.mifal.id)}>
-+                  <div className="flex items-center gap-2">
-+                    <ChevronDown size={14} style={{ transform: open ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s', color: C.forestDark }} />
-+                    <button onClick={e => { e.stopPropagation(); router.push(`/mifal/${g.mifal.id}`); }} className="text-sm font-bold hover:underline" style={{ color: C.forestDark }}>{g.mifal.name}</button>
-+                    <span className="text-xs" style={{ color: C.inkSoft }}>({g.tasks.length} משימות)</span>
-+                  </div>
-+                  <StatusBadge status={effectiveStatus(g.mifal)} />
-+                </div>
-+                {open && (
-+                  <table className="w-full text-sm border-collapse">
-+                    <thead>
-+                      <tr style={{ background: '#EDEEE0' }}>
-+                        {['', 'משימה', 'אחראי', 'תאריך יעד', 'סטטוס', ''].map((h, hi) => (
-+                          <th key={hi} className="text-right px-4 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-+                        ))}
-+                      </tr>
-+                    </thead>
-+                    <tbody>
-+                      {g.tasks.map(t => {
-+                        const u = URGENCY_STYLE[taskUrgency(t)];
-+                        return (
-+                          <tr key={t.id} style={{ background: u.bg, borderTop: `1px solid ${u.border}` }}>
-+                            <td className="px-2 py-2.5 text-center"><IconButton icon={Pencil} onClick={() => setEditingTask(t)} title="עריכה" /></td>
-+                            <td className="px-4 py-2.5" style={{ whiteSpace: 'normal', wordBreak: 'break-word', color: C.ink }}>{t.task_name}</td>
-+                            <td className="px-4 py-2.5 text-xs" style={{ color: C.inkSoft }}>{t.assigned_to || '—'}</td>
-+                            <td className="px-4 py-2.5 text-xs">{formatDate(t.deadline)}</td>
-+                            <td className="px-4 py-2.5">
-+                              <button
-+                                onClick={() => updateTask(t.id, { is_completed: !t.is_completed })}
-+                                className="px-2.5 py-1 rounded-full text-xs font-semibold"
-+                                style={t.is_completed ? { background: C.greenGoodSoft, color: C.greenGood, border: `1.5px solid ${C.ink}` } : { background: C.rustSoft, color: C.rust, border: `1.5px solid ${C.ink}` }}
-+                              >
-+                                {t.is_completed ? 'הושלם' : 'פתוח'}
-+                              </button>
-+                            </td>
-+                            <td className="px-2 py-2.5 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => deleteTask(t.id)} title="מחיקה" /></td>
-+                          </tr>
-+                        );
-+                      })}
-+                    </tbody>
-+                  </table>
-+                )}
-+              </div>
-+            );
-+          })}
++      {budgetError && (
++        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
++          {budgetError}
 +        </div>
 +      )}
-     </div>
-   );
- }
+       <div className="flex gap-2 mb-4">
+         <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.greenGoodSoft, border: `1px solid ${C.greenGood}40` }}>
+           <div className="text-[10px] font-semibold" style={{ color: C.greenGood }}>סה"כ הכנסה (כולל הרשמה)</div>
 diff --git a/mifalim-app/components/ui.js b/mifalim-app/components/ui.js
-index 299ef2d..65567eb 100644
+index 65567eb..e6b4de7 100644
 --- a/mifalim-app/components/ui.js
 +++ b/mifalim-app/components/ui.js
-@@ -207,7 +207,7 @@ export function ExportButton({ rows, columns, filename }) {
-   );
+@@ -1,5 +1,6 @@
+ 'use client';
+ import { useState, useEffect, useRef } from 'react';
++import { createPortal } from 'react-dom';
+ import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2 } from 'lucide-react';
+ import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
+ import { exportToExcel } from '../lib/exportExcel';
+@@ -208,23 +209,52 @@ export function ExportButton({ rows, columns, filename }) {
  }
  
--// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range'.
-+// Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range' | 'date-range'.
+ // Header cell with an optional sort toggle and a filter popover. `type` is 'text' | 'select' | 'range' | 'date-range'.
++// The popover itself renders through a portal into document.body, positioned by the trigger
++// button's real screen coordinates — table header cells sit inside an `overflow-hidden` wrapper
++// (so the table's own rounded corners clip cleanly), which was clipping the popover before it
++// could reach its full height, cutting off the second date input in a date-range filter.
  export function HeaderFilterPopover({ label, type, value, onChange, options, sortKey, activeSortKey, onSort }) {
    const [open, setOpen] = useState(false);
-   const ref = useRef(null);
-@@ -241,6 +241,13 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
-               <input type="number" value={value[1]} onChange={e => onChange([value[0], e.target.value])} placeholder="עד" className="w-16 text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+-  const ref = useRef(null);
++  const [pos, setPos] = useState(null);
++  const btnRef = useRef(null);
++  const popoverRef = useRef(null);
++
+   useEffect(() => {
+-    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
++    function h(e) {
++      if (btnRef.current?.contains(e.target)) return;
++      if (popoverRef.current?.contains(e.target)) return;
++      setOpen(false);
++    }
+     document.addEventListener('mousedown', h);
+     return () => document.removeEventListener('mousedown', h);
+   }, []);
++
++  useEffect(() => {
++    if (!open || !btnRef.current) { setPos(null); return; }
++    function computePosition() {
++      const rect = btnRef.current.getBoundingClientRect();
++      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
++    }
++    computePosition();
++    window.addEventListener('scroll', computePosition, true);
++    window.addEventListener('resize', computePosition);
++    return () => { window.removeEventListener('scroll', computePosition, true); window.removeEventListener('resize', computePosition); };
++  }, [open]);
++
+   const isActive = type === 'text' ? !!value : type === 'select' ? value !== 'all' : Array.isArray(value) ? (value[0] !== '' || value[1] !== '') : false;
+   return (
+-    <div className="relative inline-flex items-center gap-1" ref={ref}>
++    <div className="relative inline-flex items-center gap-1" ref={btnRef}>
+       {onSort ? (
+         <button className="flex items-center gap-1" onClick={() => onSort(sortKey)}>{label}<ArrowUpDown size={11} style={{ opacity: activeSortKey === sortKey ? 1 : 0.4 }} /></button>
+       ) : <span>{label}</span>}
+       <button onClick={() => setOpen(o => !o)} title="סינון" className="p-0.5 rounded"><Filter size={11} style={{ color: isActive ? C.ochreSoft : 'rgba(255,255,255,0.6)' }} /></button>
+-      {open && (
+-        <div onClick={e => e.stopPropagation()} className="absolute z-30 top-full mt-1 right-0 rounded-lg shadow-lg p-3" style={{ background: C.surface, border: `1px solid ${C.line}`, minWidth: 190 }}>
++      {open && pos && createPortal(
++        <div
++          ref={popoverRef}
++          onClick={e => e.stopPropagation()}
++          className="rounded-lg shadow-lg p-3"
++          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999, minWidth: 190, background: C.surface, border: `1px solid ${C.line}` }}
++        >
+           {type === 'text' && (
+             <input autoFocus value={value} onChange={e => onChange(e.target.value)} placeholder="הקלד לסינון..." className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+           )}
+@@ -248,7 +278,8 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
+               <input type="date" value={value[1]} onChange={e => onChange([value[0], e.target.value])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
              </div>
            )}
-+          {type === 'date-range' && (
-+            <div className="flex flex-col gap-1.5">
-+              <input type="date" value={value[0]} onChange={e => onChange([e.target.value, value[1]])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-+              <span className="text-xs text-center" style={{ color: C.inkSoft }}>עד</span>
-+              <input type="date" value={value[1]} onChange={e => onChange([value[0], e.target.value])} className="w-full text-xs rounded px-2 py-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-+            </div>
-+          )}
-         </div>
+-        </div>
++        </div>,
++        document.body
        )}
      </div>
-@@ -262,6 +269,15 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
- // there is different: committing must wait until focus leaves the row entirely (handled by
- // the wrapping <tr onBlur>), not fire on every individual cell's blur while tabbing across
- // the row, or the row gets created half-filled and the rest of what you type is discarded.
-+// Postgres rejects an empty string for enum ('select') and numeric/date columns outright
-+// (they're nullable, but NULL and '' aren't the same thing to it) — silently failing whatever
-+// commit sent it. Any InlineGrid column of these types should send null, never '', once a
-+// field's been touched and left blank.
-+function normalizeForCommit(type, v) {
-+  if ((type === 'number' || type === 'select' || type === 'date') && v === '') return null;
-+  return v;
-+}
-+
- function GridCell({ col, value, isGhost, onChange, onCommit }) {
-   const [local, setLocal] = useState(value);
-   useEffect(() => { setLocal(value); }, [value]);
-@@ -274,7 +290,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
-       <select
-         style={cellStyle}
-         value={display || ''}
--        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
-+        onChange={e => { const v = e.target.value; setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(normalizeForCommit('select', v)); }}
-       >
-         <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
-         {col.options.map(o => <option key={o} value={o}>{o}</option>)}
-@@ -299,7 +315,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
-       type={type} style={cellStyle} value={display ?? ''}
-       placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
-       onChange={e => { const v = e.target.value; if (isGhost) { onChange(v); } else { setLocal(v); onChange(v); } }}
--      onBlur={() => { if (!isGhost) onCommit && onCommit(local); }}
-+      onBlur={() => { if (!isGhost) onCommit && onCommit(normalizeForCommit(col.type, local)); }}
-     />
    );
- }
-@@ -317,8 +333,10 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
-     if (savingDraft) return;
-     setDraft(current => {
-       if (current[primaryKey] === undefined || current[primaryKey] === null || String(current[primaryKey]).trim() === '') return current;
-+      const normalized = { ...current };
-+      columns.forEach(col => { normalized[col.key] = normalizeForCommit(col.type, normalized[col.key]); });
-       setSavingDraft(true);
--      Promise.resolve(onCreate(current)).finally(() => setSavingDraft(false));
-+      Promise.resolve(onCreate(normalized)).finally(() => setSavingDraft(false));
-       return makeEmptyDraft();
-     });
+diff --git a/mifalim-app/lib/useBudget.js b/mifalim-app/lib/useBudget.js
+index 9f39ab0..b59c8dc 100644
+--- a/mifalim-app/lib/useBudget.js
++++ b/mifalim-app/lib/useBudget.js
+@@ -12,6 +12,7 @@ export function useBudget(ownerType, ownerId) {
+   const [income, setIncome] = useState([]);
+   const [expenses, setExpenses] = useState([]);
+   const [loading, setLoading] = useState(true);
++  const [budgetError, setBudgetError] = useState('');
+ 
+   const reload = useCallback(async () => {
+     if (!ownerId) return;
+@@ -30,62 +31,73 @@ export function useBudget(ownerType, ownerId) {
+   useEffect(() => { reload(); }, [reload]);
+ 
+   async function addIncome(row) {
++    setBudgetError('');
+     const { data, error } = await supabase.from('external_income').insert({ ...row, owner_type: ownerType, owner_id: ownerId }).select().single();
+-    if (error) { console.error('שגיאה בהוספת הכנסה:', error); return null; }
++    if (error) { console.error('שגיאה בהוספת הכנסה:', error); setBudgetError(`שגיאה בהוספת הכנסה: ${error.message}`); return null; }
+     setIncome(prev => [...prev, data]);
+     return data;
    }
-diff --git a/mifalim-app/lib/useFiles.js b/mifalim-app/lib/useFiles.js
-index 0ba535c..df67d73 100644
---- a/mifalim-app/lib/useFiles.js
-+++ b/mifalim-app/lib/useFiles.js
-@@ -31,10 +31,14 @@ export function useFiles(ownerType, ownerId) {
-       const { data: { user }, error: authError } = await supabase.auth.getUser();
-       if (authError) { setUploadError(`שגיאת התחברות: ${authError.message}`); return []; }
-       for (const file of files) {
--        // Storage object keys can't contain '#', '?', or '%' reliably across S3-compatible
--        // backends — sanitize the filename portion so uploads with those characters don't fail.
--        const safeName = file.name.replace(/[#?%]/g, '_');
--        const path = `${ownerType}/${ownerId}/${Date.now()}_${safeName}`;
-+        // Supabase Storage rejects object keys with non-ASCII characters (e.g. Hebrew names) —
-+        // "Invalid key". The display name (Hebrew and all) already lives in files.name below, so
-+        // the storage key itself doesn't need to reflect the original filename at all: build it
-+        // from only a timestamp + random id + the (ASCII-sanitized) extension.
-+        const dotIdx = file.name.lastIndexOf('.');
-+        const ext = (dotIdx > 0 ? file.name.slice(dotIdx) : '').replace(/[^a-zA-Z0-9.]/g, '');
-+        const randomId = Math.random().toString(36).slice(2, 10);
-+        const path = `${ownerType}/${ownerId}/${Date.now()}_${randomId}${ext}`;
-         const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
-         if (uploadErr) { console.error('שגיאה בהעלאת קובץ:', uploadErr); setUploadError(`שגיאה בהעלאת "${file.name}": ${uploadErr.message}`); continue; }
-         const { data, error } = await supabase.from('files').insert({
+   async function updateIncome(id, patch) {
++    setBudgetError('');
+     const { data, error } = await supabase.from('external_income').update(patch).eq('id', id).select().single();
+-    if (error) { console.error('שגיאה בעדכון הכנסה:', error); return null; }
++    if (error) { console.error('שגיאה בעדכון הכנסה:', error); setBudgetError(`שגיאה בעדכון הכנסה: ${error.message}`); return null; }
+     setIncome(prev => prev.map(r => (r.id === id ? data : r)));
+     return data;
+   }
+   async function deleteIncome(id) {
+     const { error } = await supabase.from('external_income').delete().eq('id', id);
+-    if (error) { console.error('שגיאה במחיקת הכנסה:', error); return; }
++    if (error) { console.error('שגיאה במחיקת הכנסה:', error); setBudgetError(`שגיאה במחיקת הכנסה: ${error.message}`); return; }
+     setIncome(prev => prev.filter(r => r.id !== id));
+   }
+ 
+   // suppliers is a shared, system-wide directory (see schema) — expenses point at it via
+   // supplier_id, so a typed supplier name here reuses an existing row or creates one.
++  // .limit(1) + array read (instead of .maybeSingle()) so a pre-existing duplicate supplier
++  // name doesn't throw "multiple rows returned" and silently abort the whole expense save.
+   async function resolveSupplierId(name) {
+     const trimmed = (name || '').trim();
+-    if (!trimmed) return null;
+-    const { data: existing } = await supabase.from('suppliers').select('id').eq('name', trimmed).maybeSingle();
+-    if (existing) return existing.id;
++    if (!trimmed) return { id: null, error: null };
++    const { data: existing, error: selectError } = await supabase.from('suppliers').select('id').eq('name', trimmed).limit(1);
++    if (selectError) return { id: null, error: selectError };
++    if (existing && existing.length > 0) return { id: existing[0].id, error: null };
+     const { data: created, error } = await supabase.from('suppliers').insert({ name: trimmed }).select('id').single();
+-    if (error) { console.error('שגיאה ביצירת ספק:', error); return null; }
+-    return created.id;
++    if (error) return { id: null, error };
++    return { id: created.id, error: null };
+   }
+ 
+   async function resolvePatch(patch) {
+-    if (!('supplier_name' in patch)) return patch;
++    if (!('supplier_name' in patch)) return { patch, error: null };
+     const { supplier_name, ...rest } = patch;
+-    return { ...rest, supplier_id: await resolveSupplierId(supplier_name) };
++    const { id, error } = await resolveSupplierId(supplier_name);
++    if (error) return { patch: null, error };
++    return { patch: { ...rest, supplier_id: id }, error: null };
+   }
+ 
+   async function addExpense(row) {
+-    const resolved = await resolvePatch(row);
++    setBudgetError('');
++    const { patch: resolved, error: resolveError } = await resolvePatch(row);
++    if (resolveError) { console.error('שגיאה בשיוך ספק:', resolveError); setBudgetError(`שגיאה בשיוך ספק: ${resolveError.message}`); return null; }
+     const { data, error } = await supabase.from('expenses').insert({ ...resolved, owner_type: ownerType, owner_id: ownerId }).select(EXPENSE_SELECT).single();
+-    if (error) { console.error('שגיאה בהוספת הוצאה:', error); return null; }
++    if (error) { console.error('שגיאה בהוספת הוצאה:', error); setBudgetError(`שגיאה בהוספת הוצאה: ${error.message}`); return null; }
+     const withName = withSupplierName(data);
+     setExpenses(prev => [...prev, withName]);
+     return withName;
+   }
+   async function updateExpense(id, patch) {
+-    const resolved = await resolvePatch(patch);
++    setBudgetError('');
++    const { patch: resolved, error: resolveError } = await resolvePatch(patch);
++    if (resolveError) { console.error('שגיאה בשיוך ספק:', resolveError); setBudgetError(`שגיאה בשיוך ספק: ${resolveError.message}`); return null; }
+     const { data, error } = await supabase.from('expenses').update(resolved).eq('id', id).select(EXPENSE_SELECT).single();
+-    if (error) { console.error('שגיאה בעדכון הוצאה:', error); return null; }
++    if (error) { console.error('שגיאה בעדכון הוצאה:', error); setBudgetError(`שגיאה בעדכון הוצאה: ${error.message}`); return null; }
+     const withName = withSupplierName(data);
+     setExpenses(prev => prev.map(r => (r.id === id ? withName : r)));
+     return withName;
+   }
+   async function deleteExpense(id) {
+     const { error } = await supabase.from('expenses').delete().eq('id', id);
+-    if (error) { console.error('שגיאה במחיקת הוצאה:', error); return; }
++    if (error) { console.error('שגיאה במחיקת הוצאה:', error); setBudgetError(`שגיאה במחיקת הוצאה: ${error.message}`); return; }
+     setExpenses(prev => prev.filter(r => r.id !== id));
+   }
+ 
+-  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense };
++  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError };
+ }
