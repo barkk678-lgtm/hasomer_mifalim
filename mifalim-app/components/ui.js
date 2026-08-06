@@ -300,12 +300,14 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
 // there is different: committing must wait until focus leaves the row entirely (handled by
 // the wrapping <tr onBlur>), not fire on every individual cell's blur while tabbing across
 // the row, or the row gets created half-filled and the rest of what you type is discarded.
-// Postgres rejects an empty string for enum ('select') and numeric/date columns outright
-// (they're nullable, but NULL and '' aren't the same thing to it) — silently failing whatever
-// commit sent it. Any InlineGrid column of these types should send null, never '', once a
-// field's been touched and left blank.
+// Postgres rejects an empty string for enum ('select') and date columns outright (they're
+// nullable, but NULL and '' aren't the same thing to it) — silently failing whatever commit sent
+// it. Number columns get 0 instead of null for the same reason plus one more: some of them
+// (bus_types.capacity, bus_groups.quantity) are NOT NULL, one with no default at all — sending
+// null there would still fail, where 0 is always valid regardless of nullability/defaults.
 function normalizeForCommit(type, v) {
-  if ((type === 'number' || type === 'select' || type === 'date') && v === '') return null;
+  if (type === 'number' && v === '') return 0;
+  if ((type === 'select' || type === 'date') && v === '') return null;
   return v;
 }
 
@@ -347,6 +349,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
       placeholder={isGhost ? (col.type === 'number' ? '0' : `+ ${col.label}`) : ''}
       onChange={e => { const v = e.target.value; if (isGhost) { onChange(v); } else { setLocal(v); onChange(v); } }}
       onBlur={() => { if (!isGhost) onCommit && onCommit(normalizeForCommit(col.type, local)); }}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
     />
   );
 }

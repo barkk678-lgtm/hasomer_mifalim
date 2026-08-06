@@ -1,15 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { Plus, Trash2, Bus } from 'lucide-react';
+import { Plus, Trash2, Bus, Upload, FileSpreadsheet, Wand2 } from 'lucide-react';
 import { useBusPlans } from '../lib/useBusPlans';
 import { useBusPlanDetail } from '../lib/useBusPlanDetail';
 import { C } from '../lib/designSystem';
 import { Card, IconButton, TextInput, Field, InlineGrid } from './ui';
+import { uid, downloadGroupsTemplate, parseGroupsExcel } from '../lib/busBoardHelpers';
+import BusBoard from './BusBoard';
 
-// Groups needing pickup + bus types available — the structured input data an external
-// allocation tool reads to compute the actual seating plan. The board itself (which group sits
-// on which bus) is out of scope here on purpose: it's computed/maintained by that external tool,
-// not edited by hand in this UI.
 const GROUP_COLUMNS = [
   { key: 'pickup_point', label: "נק' איסוף", type: 'text' },
   { key: 'group_name', label: 'שם הקבוצה', type: 'text' },
@@ -24,19 +22,58 @@ const BUS_TYPE_COLUMNS = [
 function emptyBusTypeDraft() { return { label: '', capacity: '' }; }
 
 function BusPlanDetail({ plan, onUpdatePlan }) {
-  const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup } = useBusPlanDetail(plan.id);
+  const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup, addGroupsBulk, updateBoard } = useBusPlanDetail(plan.id);
   const [destination, setDestination] = useState(plan.destination || '');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const totalPeople = groups.reduce((s, g) => s + (Number(g.quantity) || 0), 0);
   const totalCapacity = busTypes.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
-  const hasBoard = board && board.board && Object.keys(board.board).length > 0;
+  const hasBoard = board && board.board && (board.board.buses?.length > 0 || board.board.pieces?.length > 0);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true); setUploadError('');
+    try {
+      const newGroups = await parseGroupsExcel(file);
+      if (newGroups.length === 0) setUploadError('לא נמצאו שורות תקינות בקובץ.');
+      else await addGroupsBulk(newGroups);
+    } catch (err) {
+      setUploadError(err.message || 'שגיאה בקריאת הקובץ.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Seeds the interactive board with every current group as an unassigned "piece", ready for manual
+  // drag-and-drop into buses. "חשב סידור אוטובוסים" is the same seed today — the automatic allocation
+  // itself is computed by an external tool (not built here per instruction), so for now it hands you
+  // the same manually-workable board rather than pretending to compute something it doesn't.
+  function seedBoard() {
+    const pieces = groups.map(g => ({ id: uid('piece'), sourceGroupId: g.id, group_name: g.group_name, quantity: g.quantity, pickup_point: g.pickup_point, bus_id: null, is_split: false, split_label: null }));
+    updateBoard({ buses: [], pieces, notes: '' });
+  }
+  function handleCompute() {
+    alert('החישוב האוטומטי יחובר בהמשך לסוכן חיצוני. בינתיים נפתח לוח שיבוץ ריק שאפשר למלא ידנית בגרירה.');
+    seedBoard();
+  }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
 
   return (
     <div>
       <Card title="קבוצות">
-        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>הזנה ידנית ישירות בטבלה — כל שורה היא קבוצה שצריך לשבץ לאוטובוס.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button type="button" onClick={downloadGroupsTemplate} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16' }}><FileSpreadsheet size={15} /> הורדת תבנית לטעינה</button>
+          <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white cursor-pointer transition-opacity hover:opacity-90" style={{ background: C.forest, opacity: uploading ? 0.6 : 1 }}>
+            <Upload size={15} /> {uploading ? 'טוען...' : 'העלאת קובץ לפי התבנית'}
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} disabled={uploading} />
+          </label>
+        </div>
+        {uploadError && <p className="text-xs mb-2" style={{ color: C.rust }}>{uploadError}</p>}
+        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>ואפשר גם להוסיף/לערוך ידנית ישירות בטבלה — כל שורה היא קבוצה שצריך לשבץ לאוטובוס.</p>
         <InlineGrid columns={GROUP_COLUMNS} rows={groups} makeEmptyDraft={emptyGroupDraft} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
         {groups.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} {groups.length} קבוצות, {totalPeople} איש.</p>}
       </Card>
@@ -47,21 +84,23 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
         {busTypes.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} קיבולת: {totalCapacity} מקומות.</p>}
       </Card>
 
-      <Card title="יעד סופי">
+      <Card title="יעד סופי וחישוב">
         <Field label="יעד סופי">
           <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
         </Field>
+        <div className="flex justify-end items-center gap-2 mt-4">
+          {!hasBoard && (
+            <button disabled={groups.length === 0} onClick={seedBoard} className="px-4 py-2.5 rounded-lg text-sm font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16', opacity: groups.length === 0 ? 0.5 : 1 }}>
+              התחלת שיבוץ ידני
+            </button>
+          )}
+          <button disabled={groups.length === 0} onClick={handleCompute} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: C.linkBlue, opacity: groups.length === 0 ? 0.5 : 1 }}>
+            <Wand2 size={15} /> חשב סידור אוטובוסים
+          </button>
+        </div>
       </Card>
 
-      <Card title="סידור בפועל">
-        {hasBoard ? (
-          <p className="text-sm" style={{ color: C.forestDark }}>
-            קיים סידור פעיל לתוכנית זו{board.updated_at ? ` (עודכן לאחרונה ${new Date(board.updated_at).toLocaleString('he-IL')})` : ''}.
-          </p>
-        ) : (
-          <p className="text-sm" style={{ color: C.inkSoft }}>טרם חושב סידור אוטובוסים לתוכנית זו.</p>
-        )}
-      </Card>
+      {hasBoard && <BusBoard board={board.board} onChangeBoard={updateBoard} planName={plan.name} />}
     </div>
   );
 }
