@@ -20,6 +20,9 @@ function timeToMinutes(hhmm) {
   const [h, m] = (hhmm || '00:00').split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
 }
+// Pickup times round DOWN to the nearest 5 minutes (never later than the exact calculation) —
+// a driver arriving a couple minutes early is fine, arriving late defeats the whole schedule.
+function roundDownTo5(mins) { return Math.floor(mins / 5) * 5; }
 function minutesToTime(mins) {
   const total = ((Math.round(mins) % 1440) + 1440) % 1440;
   const h = Math.floor(total / 60), m = total % 60;
@@ -131,7 +134,7 @@ export function computeBusAssignment({ groups, busTypes, arrivalTime, destToSec,
       const travelSec = to ? stopDistanceSec(stops[i], to) : destToSec(stops[i]);
       if (travelSec == null) warnings.push(`לא נמצא זמן נסיעה אמיתי עבור "${stops[i]}" — נעשה שימוש בהערכה של 20 דקות. כדאי לוודא את הכתובת/עיר.`);
       const travelMin = travelSec != null ? travelSec / 60 : 20;
-      const pickupMin = nextPointMin - LOADING_BUFFER_MIN - travelMin;
+      const pickupMin = roundDownTo5(nextPointMin - LOADING_BUFFER_MIN - travelMin);
       stopTimes[stops[i]] = minutesToTime(pickupMin);
       nextPointMin = pickupMin;
     }
