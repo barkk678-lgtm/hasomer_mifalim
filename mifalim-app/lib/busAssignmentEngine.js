@@ -73,27 +73,36 @@ function packStopHomogeneous(items, sortedTypes) {
   return buses;
 }
 
-// Phase 2: greedily merge under-filled buses from different (nearby) stops into one, to shave
-// off bus count further — bounded passes, not an exhaustive search (fine at this problem size).
+// Phase 2: merge under-filled buses from different stops into one, to shave off bus count
+// further. Per spec, minimizing bus count is priority #1 unconditionally — merging always
+// happens whenever two buses fit together in one, with NO distance cutoff vetoing it (there's
+// no "too far to bother" case: an extra bus costs more than a few extra minutes of driving).
+// Geography (Phase 2's own name) only breaks ties between multiple equally-valid merges: at each
+// step the CLOSEST compatible pair merges first — an unknown distance (failed geocoding) is
+// deprioritized rather than treated as either "close" or "excluded", so it's picked only when no
+// better-understood option exists.
+const UNKNOWN_DIST_RANK = 1e9;
 function mergeUnderfilledBuses(buses, sortedTypes, stopDistanceSec) {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    outer: for (let i = 0; i < buses.length; i++) {
-      for (let j = i + 1; j < buses.length; j++) {
-        const a = buses[i], b = buses[j];
-        const totalQty = a.items.reduce((s, it) => s + it.quantity, 0) + b.items.reduce((s, it) => s + it.quantity, 0);
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < buses.length && !merged; i++) {
+      let bestJ = -1, bestRank = Infinity, bestType = null;
+      for (let j = 0; j < buses.length; j++) {
+        if (j === i) continue;
+        const totalQty = buses[i].items.reduce((s, it) => s + it.quantity, 0) + buses[j].items.reduce((s, it) => s + it.quantity, 0);
         const combinedType = sortedTypes.find(t => t.capacity >= totalQty);
         if (!combinedType) continue; // doesn't fit together in any single bus type
-        // Only merge stops proven to be near each other — an unknown distance (failed geocoding)
-        // must NOT be treated as "close enough", or a bus could end up routed across town.
-        const stopA = a.items[0].pickup_point, stopB = b.items[0].pickup_point;
-        const dist = stopDistanceSec(stopA, stopB);
-        if (dist == null || dist > 20 * 60) continue; // unknown, or more than ~20 min apart: not worth combining
-        buses[i] = { type: combinedType, items: [...a.items, ...b.items] };
-        buses.splice(j, 1);
-        changed = true;
-        break outer;
+        const dist = stopDistanceSec(buses[i].items[0].pickup_point, buses[j].items[0].pickup_point);
+        const rank = dist == null ? UNKNOWN_DIST_RANK : dist;
+        if (rank < bestRank) { bestRank = rank; bestJ = j; bestType = combinedType; }
+      }
+      if (bestJ !== -1) {
+        const combinedItems = [...buses[i].items, ...buses[bestJ].items];
+        const [lo, hi] = i < bestJ ? [i, bestJ] : [bestJ, i];
+        buses.splice(hi, 1);
+        buses[lo] = { type: bestType, items: combinedItems };
+        merged = true;
       }
     }
   }
