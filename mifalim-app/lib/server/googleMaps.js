@@ -40,12 +40,12 @@ export async function resolveLocation({ text, placeId }) {
 // One request covers everything — Distance Matrix API accepts multiple origins/destinations at
 // once, well within its 25x25 element limit for the handful of stops a bus plan realistically has.
 // Returns { matrix: number[][]|null, error: string|null }, same reasoning as geocodeAddress above.
-export async function distanceMatrix(points) {
+export async function distanceMatrix(points, { avoidTolls = false } = {}) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return { matrix: null, error: 'לא הוגדר מפתח Google Maps בשרת.' };
   if (points.length === 0) return { matrix: null, error: null };
   const coords = points.map(p => `${p.lat},${p.lng}`).join('|');
-  const url = `${DISTANCE_MATRIX_URL}?origins=${encodeURIComponent(coords)}&destinations=${encodeURIComponent(coords)}&language=he&key=${apiKey}`;
+  const url = `${DISTANCE_MATRIX_URL}?origins=${encodeURIComponent(coords)}&destinations=${encodeURIComponent(coords)}&language=he${avoidTolls ? '&avoid=tolls' : ''}&key=${apiKey}`;
   try {
     const res = await fetch(url);
     const data = await res.json();

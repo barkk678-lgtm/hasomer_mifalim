@@ -6,9 +6,8 @@ export async function POST(request) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return NextResponse.json({ error: 'לא הוגדר מפתח Google Maps בשרת.' }, { status: 400 });
 
-  const { groups, busTypes, destination, destinationPlaceId, arrivalTime } = await request.json();
+  const { groups, busTypes, destination, destinationPlaceId, arrivalTime, useTollRoads } = await request.json();
   if (!Array.isArray(groups) || groups.length === 0) return NextResponse.json({ error: 'אין קבוצות לשבץ.' }, { status: 400 });
-  if (!Array.isArray(busTypes) || busTypes.length === 0) return NextResponse.json({ error: 'אין סוגי אוטובוסים מוגדרים.' }, { status: 400 });
   if (!destination?.trim()) return NextResponse.json({ error: 'חסר יעד סופי.' }, { status: 400 });
 
   const warnings = [];
@@ -39,7 +38,7 @@ export async function POST(request) {
 
   const validPoints = geocoded.map((g, i) => (g.location ? { i, ...g.location } : null)).filter(Boolean);
   const { matrix, error: matrixError } = validPoints.length >= 2
-    ? await distanceMatrix(validPoints.map(p => ({ lat: p.lat, lng: p.lng })))
+    ? await distanceMatrix(validPoints.map(p => ({ lat: p.lat, lng: p.lng })), { avoidTolls: !useTollRoads })
     : { matrix: null, error: null };
   if (matrixError) warnings.push(`שגיאת Distance Matrix מ-Google Maps: ${matrixError}`);
   else if (validPoints.length >= 2 && !matrix) warnings.push('לא הצלחנו לקבל זמני נסיעה מ-Google Maps כרגע — כל השעות להלן הן הערכה גסה. כדאי לנסות שוב מאוחר יותר.');

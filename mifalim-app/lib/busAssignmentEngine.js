@@ -109,10 +109,35 @@ function mergeUnderfilledBuses(buses, sortedTypes, stopDistanceSec) {
   return buses;
 }
 
+// Backward-computes a pickup time for every stop in `stops` (already in route order — farthest
+// from the destination first) so the bus arrives at `arrivalTime`. Shared by the initial compute
+// AND by re-scheduling a single bus after a manual drag-reorder — same math either way.
+// destToSec(point) -> seconds to destination | null. stopDistanceSec(a,b) -> seconds | null.
+export function scheduleStops(stops, arrivalTime, destToSec, stopDistanceSec) {
+  const warnings = [];
+  const arrivalMin = timeToMinutes(arrivalTime || '17:00');
+  const stopTimes = {};
+  let nextPointMin = arrivalMin;
+  for (let i = stops.length - 1; i >= 0; i--) {
+    const to = i === stops.length - 1 ? null : stops[i + 1];
+    const travelSec = to ? stopDistanceSec(stops[i], to) : destToSec(stops[i]);
+    if (travelSec == null) warnings.push(`לא נמצא זמן נסיעה אמיתי עבור "${stops[i]}" — נעשה שימוש בהערכה של 20 דקות. כדאי לוודא את הכתובת/עיר.`);
+    const travelMin = travelSec != null ? travelSec / 60 : 20;
+    const pickupMin = roundDownTo5(nextPointMin - LOADING_BUFFER_MIN - travelMin);
+    stopTimes[stops[i]] = minutesToTime(pickupMin);
+    nextPointMin = pickupMin;
+  }
+  return { stopTimes, warnings };
+}
+
 // destToSec(point) -> seconds to destination | null. stopDistanceSec(a,b) -> seconds | null.
 export function computeBusAssignment({ groups, busTypes, arrivalTime, destToSec, stopDistanceSec }) {
   const warnings = [];
-  const sortedTypes = [...busTypes].sort((a, b) => (Number(a.capacity) || 0) - (Number(b.capacity) || 0));
+  // A 50-seat bus is always a valid fallback, even if the plan somehow has zero bus types
+  // defined (new plans get one seeded automatically — see useBusPlans.js — but older/edge cases
+  // shouldn't just fail to compute).
+  const effectiveTypes = busTypes.length > 0 ? busTypes : [{ label: 'רגיל (50)', capacity: 50 }];
+  const sortedTypes = [...effectiveTypes].sort((a, b) => (Number(a.capacity) || 0) - (Number(b.capacity) || 0));
   const maxCapacity = sortedTypes.length ? Number(sortedTypes[sortedTypes.length - 1].capacity) || 0 : 0;
 
   const items = splitOversizedGroups(groups, maxCapacity);
@@ -127,7 +152,6 @@ export function computeBusAssignment({ groups, busTypes, arrivalTime, destToSec,
   for (const [, stopItems] of byStop) bins.push(...packStopHomogeneous(stopItems, sortedTypes));
   bins = mergeUnderfilledBuses(bins, sortedTypes, stopDistanceSec);
 
-  const arrivalMin = timeToMinutes(arrivalTime || '17:00');
   const buses = [];
   const pieces = [];
 
@@ -136,17 +160,8 @@ export function computeBusAssignment({ groups, busTypes, arrivalTime, destToSec,
     // Route order: farthest-from-destination first, so the bus heads toward the destination.
     stops.sort((a, b) => (destToSec(b) ?? 0) - (destToSec(a) ?? 0));
 
-    const stopTimes = {};
-    let nextPointMin = arrivalMin;
-    for (let i = stops.length - 1; i >= 0; i--) {
-      const to = i === stops.length - 1 ? null : stops[i + 1];
-      const travelSec = to ? stopDistanceSec(stops[i], to) : destToSec(stops[i]);
-      if (travelSec == null) warnings.push(`לא נמצא זמן נסיעה אמיתי עבור "${stops[i]}" — נעשה שימוש בהערכה של 20 דקות. כדאי לוודא את הכתובת/עיר.`);
-      const travelMin = travelSec != null ? travelSec / 60 : 20;
-      const pickupMin = roundDownTo5(nextPointMin - LOADING_BUFFER_MIN - travelMin);
-      stopTimes[stops[i]] = minutesToTime(pickupMin);
-      nextPointMin = pickupMin;
-    }
+    const { stopTimes, warnings: scheduleWarnings } = scheduleStops(stops, arrivalTime, destToSec, stopDistanceSec);
+    warnings.push(...scheduleWarnings);
 
     const busId = uid('bus');
     buses.push({

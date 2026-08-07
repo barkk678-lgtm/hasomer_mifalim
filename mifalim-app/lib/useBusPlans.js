@@ -24,6 +24,10 @@ export function useBusPlans(mifalId) {
     const { data, error } = await supabase.from('bus_plans').insert({ mifal_id: mifalId, name }).select().single();
     if (error) { console.error('שגיאה ביצירת תוכנית הסעה:', error); return null; }
     setPlans(prev => [...prev, data]);
+    // A 50-seat bus is always available by default so a new plan is immediately computable,
+    // without forcing the user to define a bus type first — still a normal, editable/deletable row.
+    const { error: typeError } = await supabase.from('bus_types').insert({ bus_plan_id: data.id, label: 'רגיל (50)', capacity: 50 });
+    if (typeError) console.error('שגיאה ביצירת סוג אוטובוס ברירת מחדל:', typeError);
     return data;
   }
 

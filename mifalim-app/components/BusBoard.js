@@ -210,12 +210,37 @@ function BusCard({ bus, pieces, busTypes, destination, onField, onSetBusType, on
 
 // `board` is the plain {buses, pieces, notes} object (from bus_boards.board); onChangeBoard
 // persists the whole thing back via useBusPlanDetail's updateBoard.
-export default function BusBoard({ board, onChangeBoard, planName, busTypes, destination }) {
+export default function BusBoard({ board, onChangeBoard, planName, busTypes, destination, arrivalTime, useTollRoads }) {
   const [dragOverBusId, setDragOverBusId] = useState(null);
   const [poolDragActive, setPoolDragActive] = useState(false);
 
   function onDragStartPiece(e, pieceId) { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'piece', pieceId })); }
   function readPayload(e) { try { return JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return null; } }
+
+  // Applies a board change immediately (as before), then — for any bus whose stop order just
+  // changed (a manual reorder/reassignment) — asynchronously recomputes just that bus's pickup
+  // times via /api/reschedule-bus so they stay accurate instead of silently going stale.
+  async function commitBoard(newBoard, busIdsToReschedule = []) {
+    onChangeBoard(newBoard);
+    if (!destination || !arrivalTime) return;
+    for (const busId of busIdsToReschedule) {
+      if (!busId) continue;
+      const bus = newBoard.buses.find(b => b.id === busId);
+      if (!bus) continue;
+      const stops = bus.stopOrder.filter(sp => newBoard.pieces.some(p => p.bus_id === busId && p.pickup_point === sp));
+      if (stops.length === 0) continue;
+      try {
+        const res = await fetch('/api/reschedule-bus', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stops, destination, arrivalTime, useTollRoads }),
+        });
+        const data = await res.json();
+        if (res.ok && data.stopTimes) {
+          onChangeBoard({ ...newBoard, buses: newBoard.buses.map(b => (b.id === busId ? { ...b, stopTimes: data.stopTimes } : b)) });
+        }
+      } catch { /* silent — times just stay as they were, not worth blocking the drag over */ }
+    }
+  }
 
   function movePieceToBus(pieceId, busId) {
     const piece = board.pieces.find(p => p.id === pieceId);
@@ -223,7 +248,7 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes, des
     let buses = board.buses;
     if (busId) buses = buses.map(b => (b.id === busId && !b.stopOrder.includes(piece.pickup_point)) ? { ...b, stopOrder: [...b.stopOrder, piece.pickup_point] } : b);
     const pieces = mergeSplitGroupsIfComplete(board.pieces.map(p => p.id === pieceId ? { ...p, bus_id: busId } : p));
-    onChangeBoard({ ...board, buses, pieces });
+    commitBoard({ ...board, buses, pieces }, [busId]);
   }
   // Moves an entire pickup point — and every group piece assigned to it — from one bus to another (or to the pool, busId=null).
   function moveStopToBus(sourceBusId, pickupPoint, targetBusId) {
@@ -234,7 +259,7 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes, des
       if (b.id === targetBusId && !b.stopOrder.includes(pickupPoint)) return { ...b, stopOrder: [...b.stopOrder, pickupPoint] };
       return b;
     });
-    onChangeBoard({ ...board, buses, pieces });
+    commitBoard({ ...board, buses, pieces }, [sourceBusId, targetBusId]);
   }
   function handleDropOnBus(e, busId) {
     e.preventDefault(); setDragOverBusId(null);
@@ -266,7 +291,7 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes, des
       const newOrder = targetIdx === -1 ? [...withoutDragged, draggedStop] : [...withoutDragged.slice(0, targetIdx), draggedStop, ...withoutDragged.slice(targetIdx)];
       return { ...b, stopOrder: newOrder };
     });
-    onChangeBoard({ ...board, buses });
+    commitBoard({ ...board, buses }, [busId]);
   }
   // Manual split: divides one piece into two fragments sharing the same sourceGroupId (so they can later
   // auto-merge if they end up back in the same bus/pool, and can themselves be split again).

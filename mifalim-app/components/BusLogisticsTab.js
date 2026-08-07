@@ -26,6 +26,7 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
   const [destination, setDestination] = useState(plan.destination || '');
   const [destinationPlaceId, setDestinationPlaceId] = useState(plan.destination_place_id || null);
   const [arrivalTime, setArrivalTime] = useState(plan.arrival_time || '');
+  const [useTollRoads, setUseTollRoads] = useState(!!plan.use_toll_roads);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [computing, setComputing] = useState(false);
@@ -72,7 +73,7 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
       const res = await fetch('/api/compute-bus-assignment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groups, busTypes, destination, destinationPlaceId, arrivalTime }),
+        body: JSON.stringify({ groups, busTypes, destination, destinationPlaceId, arrivalTime, useTollRoads }),
       });
       const data = await res.json();
       if (!res.ok) { setComputeError(data.error || 'שגיאה בחישוב הסידור.'); return; }
@@ -83,6 +84,69 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
     } finally {
       setComputing(false);
     }
+  }
+
+  // Keeps an already-assigned bus board in sync when a group is edited from the table (name,
+  // quantity, or pickup point) — otherwise the board would keep showing stale data for a group
+  // that's already been dragged onto a bus. Warns if a quantity change now overflows that bus.
+  async function handleUpdateGroup(id, patch) {
+    const updated = await updateGroup(id, patch);
+    if (!updated || !board?.board) return updated;
+    const relevant = 'group_name' in patch || 'quantity' in patch || 'pickup_point' in patch;
+    if (!relevant) return updated;
+
+    const matching = board.board.pieces.filter(p => p.sourceGroupId === id);
+    if (matching.length === 0) return updated;
+
+    const oldPickup = matching[0].pickup_point;
+    let pieces = board.board.pieces;
+
+    if ('quantity' in patch) {
+      const oldTotal = matching.reduce((s, p) => s + (Number(p.quantity) || 0), 0) || 1;
+      const newTotal = Number(updated.quantity) || 0;
+      if (matching.length === 1) {
+        pieces = pieces.map(p => (p.id === matching[0].id ? { ...p, quantity: newTotal } : p));
+      } else {
+        // Split pieces: scale each fragment proportionally, adjusting the last so the sum matches exactly.
+        let running = 0;
+        pieces = pieces.map(p => {
+          const idx = matching.findIndex(mp => mp.id === p.id);
+          if (idx === -1) return p;
+          const share = idx === matching.length - 1 ? newTotal - running : Math.round(((Number(p.quantity) || 0) / oldTotal) * newTotal);
+          if (idx !== matching.length - 1) running += share;
+          return { ...p, quantity: share };
+        });
+      }
+    }
+    if ('group_name' in patch) pieces = pieces.map(p => (p.sourceGroupId === id ? { ...p, group_name: updated.group_name } : p));
+    if ('pickup_point' in patch) pieces = pieces.map(p => (p.sourceGroupId === id ? { ...p, pickup_point: updated.pickup_point } : p));
+
+    let buses = board.board.buses;
+    if ('pickup_point' in patch && updated.pickup_point !== oldPickup) {
+      // Rename the stop everywhere it's referenced on the bus this piece is assigned to (stopOrder + stopTimes key).
+      buses = buses.map(b => {
+        if (!b.stopOrder.includes(oldPickup)) return b;
+        const stopOrder = b.stopOrder.map(sp => (sp === oldPickup ? updated.pickup_point : sp));
+        const stopTimes = { ...b.stopTimes };
+        if (oldPickup in stopTimes) { stopTimes[updated.pickup_point] = stopTimes[oldPickup]; delete stopTimes[oldPickup]; }
+        return { ...b, stopOrder, stopTimes };
+      });
+    }
+
+    await updateBoard({ ...board.board, buses, pieces });
+
+    if ('quantity' in patch) {
+      const affectedBusIds = new Set(matching.map(p => p.bus_id).filter(Boolean));
+      for (const busId of affectedBusIds) {
+        const bus = buses.find(b => b.id === busId);
+        if (!bus) continue;
+        const total = pieces.filter(p => p.bus_id === busId).reduce((s, p) => s + (Number(p.quantity) || 0), 0);
+        if (bus.capacity > 0 && total > bus.capacity) {
+          alert(`שים לב: השינוי בכמות הביא לחריגה באוטובוס ${bus.bus_number} (${total} מתוך ${bus.capacity} מקומות).`);
+        }
+      }
+    }
+    return updated;
   }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
@@ -104,15 +168,26 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
           rows={groups}
           makeEmptyDraft={emptyGroupDraft}
           onCreate={createGroup}
-          onUpdate={updateGroup}
+          onUpdate={handleUpdateGroup}
           onDelete={deleteGroup}
-          getCellExtra={(row, col) => (col.key === 'pickup_point' ? { onSelectPlace: patch => updateGroup(row.id, patch) } : {})}
+          getCellExtra={(row, col) => (col.key === 'pickup_point' ? { onSelectPlace: patch => handleUpdateGroup(row.id, patch) } : {})}
         />
         {groups.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} {groups.length} קבוצות, {totalPeople} איש.</p>}
       </Card>
 
       <Card title="סוגי אוטובוסים זמינים">
-        <p className="text-xs mb-3" style={{ color: C.inkSoft }}>ניתן להגדיר כמה סוגים בקיבולות שונות.</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs" style={{ color: C.inkSoft }}>ניתן להגדיר כמה סוגים בקיבולות שונות. אוטובוס של 50 מקומות זמין תמיד כברירת מחדל.</p>
+          <button
+            type="button"
+            onClick={() => { const v = !useTollRoads; setUseTollRoads(v); onUpdatePlan(plan.id, { use_toll_roads: v }); }}
+            className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap"
+            style={useTollRoads ? { background: C.greenGoodSoft, color: C.greenGood } : { background: C.rustSoft, color: C.rust }}
+            title="האם החישוב האוטומטי רשאי להשתמש בכבישי אגרה"
+          >
+            כבישי אגרה: {useTollRoads ? 'כן' : 'לא'}
+          </button>
+        </div>
         <InlineGrid columns={BUS_TYPE_COLUMNS} rows={busTypes} makeEmptyDraft={emptyBusTypeDraft} onCreate={createBusType} onUpdate={updateBusType} onDelete={deleteBusType} />
         {busTypes.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} קיבולת: {totalCapacity} מקומות.</p>}
       </Card>
@@ -150,7 +225,7 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
         </div>
       </Card>
 
-      {hasBoard && <BusBoard board={board.board} onChangeBoard={updateBoard} planName={plan.name} busTypes={busTypes} destination={destination} />}
+      {hasBoard && <BusBoard board={board.board} onChangeBoard={updateBoard} planName={plan.name} busTypes={busTypes} destination={destination} arrivalTime={arrivalTime} useTollRoads={useTollRoads} />}
     </div>
   );
 }
