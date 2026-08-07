@@ -99,6 +99,24 @@ function CapacityPicker({ bus, busTypes, overCapacity, total, onSelect }) {
   );
 }
 
+// Plain, locally-buffered text field: `value` only advances once the board round-trips through
+// Supabase (onChangeBoard → upsert → setBoard), so a controlled input wired directly to it fights
+// every keystroke — the field visibly reverts/eats characters while typing. Buffering locally and
+// committing on blur makes it behave like an ordinary text input, no different from any other
+// field in the app.
+function BufferedTextInput({ value, onCommit, ...props }) {
+  const [local, setLocal] = useState(value || '');
+  useEffect(() => { setLocal(value || ''); }, [value]);
+  return (
+    <input
+      {...props}
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={() => onCommit(local)}
+    />
+  );
+}
+
 function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
   const total = pieces.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
   const overCapacity = bus.capacity > 0 && total > bus.capacity;
@@ -113,11 +131,10 @@ function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDr
         <span className="text-xs font-bold flex items-center gap-1" style={{ color: C.forestDark }}><BusIcon size={13} /> אוטובוס {bus.bus_number}</span>
         <CapacityPicker bus={bus} busTypes={busTypes} overCapacity={overCapacity} total={total} onSelect={onSetBusType} />
       </div>
-      {bus.bus_type && <div className="text-[10px]" style={{ color: C.inkSoft }}>{bus.bus_type}</div>}
       {/* Fixed-width labels (w-9) so "אחראי"/"נהג" — different text lengths — don't push their
           inputs to start at different x positions. */}
-      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>אחראי</span><input value={bus.coordinator} onChange={e => onField('coordinator', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
-      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>נהג</span><input value={bus.driver} onChange={e => onField('driver', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
+      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>אחראי</span><BufferedTextInput value={bus.coordinator} onCommit={v => onField('coordinator', v)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
+      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>נהג</span><BufferedTextInput value={bus.driver} onCommit={v => onField('driver', v)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
       <div className="flex flex-col gap-1.5 mt-1">
         {stops.length === 0 ? (
           <p className="text-[11px] text-center py-3" style={{ color: C.inkSoft }}>גררו קבוצות או נקודות איסוף לכאן</p>
@@ -142,12 +159,10 @@ function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDr
                 <span className="text-[11px] font-semibold truncate" style={{ color: C.ink }}>{sp}</span>
                 <button type="button" onClick={() => onReturnStop(bus.id, sp)} title="החזרת כל התחנה למאגר הבלתי משובץ" className="shrink-0" style={{ color: C.inkSoft }}><Undo2 size={12} /></button>
               </div>
-              {/* dir="ltr" matters here: inside the page's overall RTL direction, a narrow text
-                  input holding LTR-ish content (a time like "14:30") otherwise keeps its visual
-                  caret/content anchored at the field's logical-start edge and can render newly
-                  typed characters off past the visible edge — they're captured in the value, just
-                  not visibly on screen, reading as if the field "swallows" what you type. */}
-              <input type="text" dir="ltr" inputMode="numeric" value={(bus.stopTimes && bus.stopTimes[sp]) || ''} onChange={e => onUpdateStopTime(bus.id, sp, e.target.value)} placeholder="שעה" className="text-[11px] rounded px-1.5 py-1 shrink-0 text-center" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 64 }} />
+              <BufferedTextInput
+                type="text" value={(bus.stopTimes && bus.stopTimes[sp]) || ''} onCommit={v => onUpdateStopTime(bus.id, sp, v)}
+                placeholder="שעה" className="text-[11px] rounded px-1.5 py-1 shrink-0 text-center" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 64 }}
+              />
             </div>
             <div className="flex flex-col gap-1">
               {pieces.filter(p => p.pickup_point === sp).map(p => <PieceChip key={p.id} piece={p} onDragStart={onDragStartPiece} onReturn={onReturnPiece} onSplit={onSplitPiece} />)}
