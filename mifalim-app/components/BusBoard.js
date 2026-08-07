@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Plus, FileSpreadsheet, Scissors, Undo2, GripVertical, Users, Info, Bus as BusIcon, Trash2 } from 'lucide-react';
+import { Plus, FileSpreadsheet, Scissors, Undo2, GripVertical, Users, Info, Bus as BusIcon, Trash2, MapPin } from 'lucide-react';
 import { C, NUMFONT } from '../lib/designSystem';
-import { Badge, IconButton } from './ui';
+import { Badge, IconButton, Modal } from './ui';
 import { uid, mergeSplitGroupsIfComplete, exportBoardAsImage } from '../lib/busBoardHelpers';
 
 function SplitPopover({ piece, onSplit, onClose }) {
@@ -117,7 +117,34 @@ function BufferedTextInput({ value, onCommit, ...props }) {
   );
 }
 
-function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDeleteBus, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
+// Shows the bus's actual route (stops -> destination) on a real, live Google Maps embed — not a
+// custom-built map, just Google's own directions widget inside our modal. Uses a SEPARATE,
+// narrowly-restricted key (Maps Embed API only, HTTP-referrer-locked to this domain) since the
+// Embed API requires the key to be visible client-side by Google's own design; the server-only
+// key used for geocoding/routing computation is untouched and never exposed.
+function RouteMapModal({ open, onClose, stops, destination }) {
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY;
+  if (!open) return null;
+  if (!key) {
+    return (
+      <Modal open={open} onClose={onClose} title="מסלול הנסיעה">
+        <p className="text-sm" style={{ color: C.rust }}>לא הוגדר מפתח להטמעת מפות (NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY).</p>
+      </Modal>
+    );
+  }
+  const origin = encodeURIComponent(stops[0]);
+  const dest = encodeURIComponent(destination);
+  const waypoints = stops.slice(1).map(encodeURIComponent).join('|');
+  const src = `https://www.google.com/maps/embed/v1/directions?key=${key}&origin=${origin}&destination=${dest}${waypoints ? `&waypoints=${waypoints}` : ''}&mode=driving&language=he&region=il`;
+  return (
+    <Modal open={open} onClose={onClose} title="מסלול הנסיעה" width="max-w-3xl">
+      <iframe title="מסלול הנסיעה" src={src} width="100%" height="480" style={{ border: 0, borderRadius: 8 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+    </Modal>
+  );
+}
+
+function BusCard({ bus, pieces, busTypes, destination, onField, onSetBusType, onDeleteBus, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
+  const [mapOpen, setMapOpen] = useState(false);
   const total = pieces.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
   const overCapacity = bus.capacity > 0 && total > bus.capacity;
   const stops = bus.stopOrder.filter(sp => pieces.some(p => p.pickup_point === sp));
@@ -131,6 +158,9 @@ function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDeleteBus, on
         <span className="text-xs font-bold flex items-center gap-1" style={{ color: C.forestDark }}><BusIcon size={13} /> אוטובוס {bus.bus_number}</span>
         <div className="flex items-center gap-1">
           <CapacityPicker bus={bus} busTypes={busTypes} overCapacity={overCapacity} total={total} onSelect={onSetBusType} />
+          {stops.length > 0 && destination && (
+            <IconButton icon={MapPin} tone="steel" size={13} onClick={() => setMapOpen(true)} title="הצגת המסלול על גבי Google Maps" />
+          )}
           <IconButton icon={Trash2} tone="danger" size={13} onClick={() => onDeleteBus(bus.id)} title="ביטול אוטובוס (הקבוצות יחזרו למאגר)" />
         </div>
       </div>
@@ -173,13 +203,14 @@ function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDeleteBus, on
           </div>
         ))}
       </div>
+      <RouteMapModal open={mapOpen} onClose={() => setMapOpen(false)} stops={stops} destination={destination} />
     </div>
   );
 }
 
 // `board` is the plain {buses, pieces, notes} object (from bus_boards.board); onChangeBoard
 // persists the whole thing back via useBusPlanDetail's updateBoard.
-export default function BusBoard({ board, onChangeBoard, planName, busTypes }) {
+export default function BusBoard({ board, onChangeBoard, planName, busTypes, destination }) {
   const [dragOverBusId, setDragOverBusId] = useState(null);
   const [poolDragActive, setPoolDragActive] = useState(false);
 
@@ -286,7 +317,7 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {board.buses.map(bus => (
           <BusCard
-            key={bus.id} bus={bus} pieces={board.pieces.filter(p => p.bus_id === bus.id)} busTypes={busTypes}
+            key={bus.id} bus={bus} pieces={board.pieces.filter(p => p.bus_id === bus.id)} busTypes={busTypes} destination={destination}
             onField={(k, v) => updateBusField(bus.id, k, v)}
             onSetBusType={type => setBusType(bus.id, type)}
             onDeleteBus={deleteBus}

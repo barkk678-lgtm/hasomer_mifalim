@@ -150,7 +150,7 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
         </div>
       </Card>
 
-      {hasBoard && <BusBoard board={board.board} onChangeBoard={updateBoard} planName={plan.name} busTypes={busTypes} />}
+      {hasBoard && <BusBoard board={board.board} onChangeBoard={updateBoard} planName={plan.name} busTypes={busTypes} destination={destination} />}
     </div>
   );
 }

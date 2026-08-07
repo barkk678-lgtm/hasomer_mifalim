@@ -186,7 +186,7 @@ export function StatusBadge({ status }) {
 }
 
 export function IconButton({ icon: Icon, onClick, title, tone = 'ghost', size = 15 }) {
-  const color = tone === 'danger' ? C.rust : C.inkSoft;
+  const color = tone === 'danger' ? C.rust : tone === 'steel' ? C.steel : C.inkSoft;
   return (
     <button type="button" onClick={onClick} title={title} className="p-1.5 rounded-md hover:opacity-70 transition-opacity" style={{ color }}>
       <Icon size={size} />
