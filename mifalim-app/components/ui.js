@@ -16,10 +16,43 @@ export function Field({ label, children, hint }) {
 }
 
 export function InfoField({ label, value }) {
+  const [tooltipPos, setTooltipPos] = useState(null);
+  const valueRef = useRef(null);
+
+  function handleEnter() {
+    const el = valueRef.current;
+    if (!el) return;
+    const isTruncated = el.scrollWidth > el.clientWidth;
+    if (!isTruncated) return;
+    const rect = el.getBoundingClientRect();
+    setTooltipPos({ top: rect.bottom + 4, left: rect.left, minWidth: rect.width });
+  }
+
   return (
     <div>
       <div className="text-[11px] font-semibold tracking-wide" style={{ color: C.inkSoft }}>{label}</div>
-      <div className="text-sm font-medium mt-0.5 truncate" style={{ color: C.ink }}>{value || '—'}</div>
+      <div
+        ref={valueRef}
+        onMouseEnter={handleEnter}
+        onMouseLeave={() => setTooltipPos(null)}
+        className="text-sm font-medium mt-0.5 truncate"
+        style={{ color: C.ink }}
+      >
+        {value || '—'}
+      </div>
+      {tooltipPos && createPortal(
+        <div
+          className="rounded-lg shadow-lg px-3 py-2 text-sm"
+          style={{
+            position: 'fixed', top: tooltipPos.top, left: tooltipPos.left, minWidth: tooltipPos.minWidth,
+            maxWidth: 360, zIndex: 9999, background: C.surface, border: `1px solid ${C.line}`, color: C.ink,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word', pointerEvents: 'none',
+          }}
+        >
+          {value}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
