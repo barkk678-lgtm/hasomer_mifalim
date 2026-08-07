@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, FileSpreadsheet, Scissors, Undo2, GripVertical, Users, Info, Bus as BusIcon } from 'lucide-react';
 import { C, NUMFONT } from '../lib/designSystem';
 import { Badge } from './ui';
@@ -53,7 +53,53 @@ function UnassignedPool({ pieces, onDragStartPiece, onDropToPool, onSplitPiece, 
   );
 }
 
-function BusCard({ bus, pieces, onField, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
+// The capacity badge doubles as a bus-type switcher: with exactly two bus types defined, a click
+// just flips to the other one directly (no menu needed for a binary choice); with three or more,
+// it opens a small picker listing them all. Updates both bus_type (label) and capacity together
+// so the two never end up mismatched.
+function CapacityPicker({ bus, busTypes, overCapacity, total, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const types = busTypes || [];
+  if (types.length < 2) {
+    return <Badge tone={overCapacity ? 'rust' : 'good'}>{total}{bus.capacity ? `/${bus.capacity}` : ''}</Badge>;
+  }
+
+  function handleClick() {
+    if (types.length === 2) {
+      const idx = types.findIndex(t => t.label === bus.bus_type && Number(t.capacity) === Number(bus.capacity));
+      onSelect(types[idx === 0 ? 1 : 0]);
+    } else {
+      setOpen(o => !o);
+    }
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={handleClick} title="שינוי סוג אוטובוס">
+        <Badge tone={overCapacity ? 'rust' : 'good'}>{total}{bus.capacity ? `/${bus.capacity}` : ''}</Badge>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 rounded-lg shadow-lg p-1" style={{ background: C.surface, border: `1px solid ${C.line}`, minWidth: 150 }}>
+          {types.map(t => (
+            <button key={t.id} type="button" onClick={() => { onSelect(t); setOpen(false); }} className="w-full text-right text-xs px-2.5 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>
+              {t.label} ({t.capacity})
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
   const total = pieces.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
   const overCapacity = bus.capacity > 0 && total > bus.capacity;
   const stops = bus.stopOrder.filter(sp => pieces.some(p => p.pickup_point === sp));
@@ -65,11 +111,13 @@ function BusCard({ bus, pieces, onField, onDropAny, onDragStartPiece, onSplitPie
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold flex items-center gap-1" style={{ color: C.forestDark }}><BusIcon size={13} /> אוטובוס {bus.bus_number}</span>
-        <Badge tone={overCapacity ? 'rust' : 'good'}>{total}{bus.capacity ? `/${bus.capacity}` : ''}</Badge>
+        <CapacityPicker bus={bus} busTypes={busTypes} overCapacity={overCapacity} total={total} onSelect={onSetBusType} />
       </div>
       {bus.bus_type && <div className="text-[10px]" style={{ color: C.inkSoft }}>{bus.bus_type}</div>}
-      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0" style={{ color: C.inkSoft }}>אחראי</span><input value={bus.coordinator} onChange={e => onField('coordinator', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
-      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0" style={{ color: C.inkSoft }}>נהג</span><input value={bus.driver} onChange={e => onField('driver', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
+      {/* Fixed-width labels (w-9) so "אחראי"/"נהג" — different text lengths — don't push their
+          inputs to start at different x positions. */}
+      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>אחראי</span><input value={bus.coordinator} onChange={e => onField('coordinator', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
+      <div className="flex items-center gap-1.5"><span className="text-[10px] shrink-0 w-9" style={{ color: C.inkSoft }}>נהג</span><input value={bus.driver} onChange={e => onField('driver', e.target.value)} placeholder="שם + טלפון" className="flex-1 min-w-0 text-[11px] px-2 py-1.5 rounded" style={{ border: `1px solid ${C.line}` }} /></div>
       <div className="flex flex-col gap-1.5 mt-1">
         {stops.length === 0 ? (
           <p className="text-[11px] text-center py-3" style={{ color: C.inkSoft }}>גררו קבוצות או נקודות איסוף לכאן</p>
@@ -94,7 +142,12 @@ function BusCard({ bus, pieces, onField, onDropAny, onDragStartPiece, onSplitPie
                 <span className="text-[11px] font-semibold truncate" style={{ color: C.ink }}>{sp}</span>
                 <button type="button" onClick={() => onReturnStop(bus.id, sp)} title="החזרת כל התחנה למאגר הבלתי משובץ" className="shrink-0" style={{ color: C.inkSoft }}><Undo2 size={12} /></button>
               </div>
-              <input type="text" inputMode="numeric" value={(bus.stopTimes && bus.stopTimes[sp]) || ''} onChange={e => onUpdateStopTime(bus.id, sp, e.target.value)} placeholder="שעה" className="text-[10px] rounded px-1.5 py-1 shrink-0 text-center" style={{ border: `1px solid ${C.line}`, width: 56 }} />
+              {/* dir="ltr" matters here: inside the page's overall RTL direction, a narrow text
+                  input holding LTR-ish content (a time like "14:30") otherwise keeps its visual
+                  caret/content anchored at the field's logical-start edge and can render newly
+                  typed characters off past the visible edge — they're captured in the value, just
+                  not visibly on screen, reading as if the field "swallows" what you type. */}
+              <input type="text" dir="ltr" inputMode="numeric" value={(bus.stopTimes && bus.stopTimes[sp]) || ''} onChange={e => onUpdateStopTime(bus.id, sp, e.target.value)} placeholder="שעה" className="text-[11px] rounded px-1.5 py-1 shrink-0 text-center" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 64 }} />
             </div>
             <div className="flex flex-col gap-1">
               {pieces.filter(p => p.pickup_point === sp).map(p => <PieceChip key={p.id} piece={p} onDragStart={onDragStartPiece} onReturn={onReturnPiece} onSplit={onSplitPiece} />)}
@@ -108,7 +161,7 @@ function BusCard({ bus, pieces, onField, onDropAny, onDragStartPiece, onSplitPie
 
 // `board` is the plain {buses, pieces, notes} object (from bus_boards.board); onChangeBoard
 // persists the whole thing back via useBusPlanDetail's updateBoard.
-export default function BusBoard({ board, onChangeBoard, planName }) {
+export default function BusBoard({ board, onChangeBoard, planName, busTypes }) {
   const [dragOverBusId, setDragOverBusId] = useState(null);
   const [poolDragActive, setPoolDragActive] = useState(false);
 
@@ -148,6 +201,9 @@ export default function BusBoard({ board, onChangeBoard, planName }) {
   }
   function updateBusField(busId, key, value) {
     onChangeBoard({ ...board, buses: board.buses.map(b => b.id === busId ? { ...b, [key]: value } : b) });
+  }
+  function setBusType(busId, type) {
+    onChangeBoard({ ...board, buses: board.buses.map(b => b.id === busId ? { ...b, bus_type: type.label, capacity: Number(type.capacity) || 0 } : b) });
   }
   function updateStopTime(busId, pickupPoint, time) {
     onChangeBoard({ ...board, buses: board.buses.map(b => b.id === busId ? { ...b, stopTimes: { ...(b.stopTimes || {}), [pickupPoint]: time } } : b) });
@@ -206,8 +262,9 @@ export default function BusBoard({ board, onChangeBoard, planName }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {board.buses.map(bus => (
           <BusCard
-            key={bus.id} bus={bus} pieces={board.pieces.filter(p => p.bus_id === bus.id)}
+            key={bus.id} bus={bus} pieces={board.pieces.filter(p => p.bus_id === bus.id)} busTypes={busTypes}
             onField={(k, v) => updateBusField(bus.id, k, v)}
+            onSetBusType={type => setBusType(bus.id, type)}
             onDropAny={handleDropOnBus} onDragStartPiece={onDragStartPiece} onSplitPiece={splitPiece}
             onReorderStop={reorderStopInBus} onMoveStop={moveStopToBus}
             onUpdateStopTime={updateStopTime}
