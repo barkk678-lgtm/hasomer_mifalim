@@ -10,10 +10,11 @@ import BusBoard from './BusBoard';
 
 const GROUP_COLUMNS = [
   { key: 'pickup_point', label: "נק' איסוף", type: 'text' },
+  { key: 'city', label: 'עיר', type: 'text' },
   { key: 'group_name', label: 'שם הקבוצה', type: 'text' },
   { key: 'quantity', label: 'כמות', type: 'number' },
 ];
-function emptyGroupDraft() { return { pickup_point: '', group_name: '', quantity: '' }; }
+function emptyGroupDraft() { return { pickup_point: '', city: '', group_name: '', quantity: '' }; }
 
 const BUS_TYPE_COLUMNS = [
   { key: 'label', label: 'שם סוג האוטובוס', type: 'text' },
@@ -24,8 +25,13 @@ function emptyBusTypeDraft() { return { label: '', capacity: '' }; }
 function BusPlanDetail({ plan, onUpdatePlan }) {
   const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup, addGroupsBulk, updateBoard } = useBusPlanDetail(plan.id);
   const [destination, setDestination] = useState(plan.destination || '');
+  const [destinationCity, setDestinationCity] = useState(plan.destination_city || '');
+  const [arrivalTime, setArrivalTime] = useState(plan.arrival_time || '');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [computing, setComputing] = useState(false);
+  const [computeError, setComputeError] = useState('');
+  const [computeWarnings, setComputeWarnings] = useState([]);
 
   const totalPeople = groups.reduce((s, g) => s + (Number(g.quantity) || 0), 0);
   const totalCapacity = busTypes.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
@@ -55,9 +61,29 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
     const pieces = groups.map(g => ({ id: uid('piece'), sourceGroupId: g.id, group_name: g.group_name, quantity: g.quantity, pickup_point: g.pickup_point, bus_id: null, is_split: false, split_label: null }));
     updateBoard({ buses: [], pieces, notes: '' });
   }
-  function handleCompute() {
-    alert('החישוב האוטומטי יחובר בהמשך לסוכן חיצוני. בינתיים נפתח לוח שיבוץ ריק שאפשר למלא ידנית בגרירה.');
-    seedBoard();
+
+  // Calls the real bin-packing + Google Maps engine (/api/compute-bus-assignment) — real travel
+  // data, not an AI guess, and a hard guarantee that no bus ever exceeds its capacity.
+  async function handleCompute() {
+    if (!destination.trim()) { setComputeError('יש למלא יעד סופי לפני החישוב.'); return; }
+    if (!arrivalTime) { setComputeError('יש למלא שעת הגעה ליעד לפני החישוב.'); return; }
+    if (hasBoard && !confirm('כבר קיים לוח שיבוץ (כולל שינויים ידניים אם היו). חישוב מחדש יחליף אותו לגמרי. להמשיך?')) return;
+    setComputing(true); setComputeError(''); setComputeWarnings([]);
+    try {
+      const res = await fetch('/api/compute-bus-assignment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groups, busTypes, destination, destinationCity, arrivalTime }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setComputeError(data.error || 'שגיאה בחישוב הסידור.'); return; }
+      await updateBoard(data.board);
+      setComputeWarnings(data.warnings || []);
+    } catch {
+      setComputeError('שגיאה בתקשורת מול שרת החישוב. נסו שוב.');
+    } finally {
+      setComputing(false);
+    }
   }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
@@ -85,17 +111,32 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
       </Card>
 
       <Card title="יעד סופי וחישוב">
-        <Field label="יעד סופי">
-          <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Field label="יעד סופי">
+            <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
+          </Field>
+          <Field label="עיר היעד">
+            <TextInput value={destinationCity} onChange={e => setDestinationCity(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination_city: destinationCity })} placeholder="לדוגמה: רעננה" />
+          </Field>
+          <Field label="שעת הגעה ליעד">
+            <TextInput type="time" value={arrivalTime} onChange={e => setArrivalTime(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { arrival_time: arrivalTime })} />
+          </Field>
+        </div>
+        <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>עיר היעד ועיר כל נקודת איסוף (בטבלת הקבוצות למעלה) נדרשות לחישוב מדויק — בלעדיהן ייתכנו טעויות מיקום.</p>
+        {computeError && <p className="text-xs mt-2" style={{ color: C.rust }}>{computeError}</p>}
+        {computeWarnings.length > 0 && (
+          <div className="rounded-lg px-3 py-2 mt-2 text-xs" style={{ background: C.ochreSoft, color: '#6B4C16' }}>
+            {computeWarnings.map((w, i) => <p key={i}>{w}</p>)}
+          </div>
+        )}
         <div className="flex justify-end items-center gap-2 mt-4">
           {!hasBoard && (
             <button disabled={groups.length === 0} onClick={seedBoard} className="px-4 py-2.5 rounded-lg text-sm font-semibold" style={{ background: C.ochreSoft, color: '#6B4C16', opacity: groups.length === 0 ? 0.5 : 1 }}>
               התחלת שיבוץ ידני
             </button>
           )}
-          <button disabled={groups.length === 0} onClick={handleCompute} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: C.linkBlue, opacity: groups.length === 0 ? 0.5 : 1 }}>
-            <Wand2 size={15} /> חשב סידור אוטובוסים
+          <button disabled={groups.length === 0 || computing} onClick={handleCompute} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: C.linkBlue, opacity: (groups.length === 0 || computing) ? 0.5 : 1 }}>
+            <Wand2 size={15} /> {computing ? 'מחשב...' : 'חשב סידור אוטובוסים'}
           </button>
         </div>
       </Card>
