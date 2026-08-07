@@ -9,3 +9,16 @@ body {
   background: #EEEEE4;
   color: #20261C;
 }
+
+/* Number input spinner arrows (up/down) are easy to bump by accident while scrolling or
+   clicking near a cell in a table, silently changing a quantity/price/capacity — removed
+   app-wide rather than per-field. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

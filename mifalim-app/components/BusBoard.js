@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Plus, FileSpreadsheet, Scissors, Undo2, GripVertical, Users, Info, Bus as BusIcon } from 'lucide-react';
+import { Plus, FileSpreadsheet, Scissors, Undo2, GripVertical, Users, Info, Bus as BusIcon, Trash2 } from 'lucide-react';
 import { C, NUMFONT } from '../lib/designSystem';
-import { Badge } from './ui';
+import { Badge, IconButton } from './ui';
 import { uid, mergeSplitGroupsIfComplete, exportBoardAsImage } from '../lib/busBoardHelpers';
 
 function SplitPopover({ piece, onSplit, onClose }) {
@@ -117,7 +117,7 @@ function BufferedTextInput({ value, onCommit, ...props }) {
   );
 }
 
-function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
+function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDeleteBus, onDropAny, onDragStartPiece, onSplitPiece, onReorderStop, onMoveStop, onUpdateStopTime, onReturnPiece, onReturnStop, dragOverBusId, onDragOver, onDragLeave }) {
   const total = pieces.reduce((s, p) => s + (Number(p.quantity) || 0), 0);
   const overCapacity = bus.capacity > 0 && total > bus.capacity;
   const stops = bus.stopOrder.filter(sp => pieces.some(p => p.pickup_point === sp));
@@ -129,7 +129,10 @@ function BusCard({ bus, pieces, busTypes, onField, onSetBusType, onDropAny, onDr
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold flex items-center gap-1" style={{ color: C.forestDark }}><BusIcon size={13} /> אוטובוס {bus.bus_number}</span>
-        <CapacityPicker bus={bus} busTypes={busTypes} overCapacity={overCapacity} total={total} onSelect={onSetBusType} />
+        <div className="flex items-center gap-1">
+          <CapacityPicker bus={bus} busTypes={busTypes} overCapacity={overCapacity} total={total} onSelect={onSetBusType} />
+          <IconButton icon={Trash2} tone="danger" size={13} onClick={() => onDeleteBus(bus.id)} title="ביטול אוטובוס (הקבוצות יחזרו למאגר)" />
+        </div>
       </div>
       {/* Fixed-width labels (w-9) so "אחראי"/"נהג" — different text lengths — don't push their
           inputs to start at different x positions. */}
@@ -254,6 +257,12 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes }) {
     const newBus = { id: uid('bus'), bus_number: board.buses.length + 1, bus_type: template?.bus_type || '', capacity: template?.capacity || 50, coordinator: '', driver: '', stopOrder: [], stopTimes: {} };
     onChangeBoard({ ...board, buses: [...board.buses, newBus] });
   }
+  // Removing a bus sends every group piece that was on it back to the unassigned pool rather
+  // than deleting them — the underlying bus_groups rows are untouched either way.
+  function deleteBus(busId) {
+    const pieces = mergeSplitGroupsIfComplete(board.pieces.map(p => (p.bus_id === busId ? { ...p, bus_id: null } : p)));
+    onChangeBoard({ ...board, buses: board.buses.filter(b => b.id !== busId), pieces });
+  }
 
   const unassigned = board.pieces.filter(p => !p.bus_id);
 
@@ -280,6 +289,7 @@ export default function BusBoard({ board, onChangeBoard, planName, busTypes }) {
             key={bus.id} bus={bus} pieces={board.pieces.filter(p => p.bus_id === bus.id)} busTypes={busTypes}
             onField={(k, v) => updateBusField(bus.id, k, v)}
             onSetBusType={type => setBusType(bus.id, type)}
+            onDeleteBus={deleteBus}
             onDropAny={handleDropOnBus} onDragStartPiece={onDragStartPiece} onSplitPiece={splitPiece}
             onReorderStop={reorderStopInBus} onMoveStop={moveStopToBus}
             onUpdateStopTime={updateStopTime}
