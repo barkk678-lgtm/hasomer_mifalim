@@ -25,14 +25,23 @@ export async function POST(request) {
   const addresses = [fullAddress(destination, destinationCity), ...stopKeys.map(k => fullAddress(k, stopCityByKey[k]))];
   const geocoded = await Promise.all(addresses.map(a => geocodeAddress(a)));
 
-  const missing = [];
-  stopKeys.forEach((k, i) => { if (!geocoded[i + 1]) missing.push(k); });
-  if (!geocoded[0]) missing.push(`היעד (${destination})`);
-  if (missing.length > 0) warnings.push(`לא הצלחנו לאתר את המיקום עבור: ${missing.join(', ')}. יש לוודא שם מקום + עיר מדויקים. זמני הנסיעה עבור אלה יהיו הערכה גסה בלבד.`);
+  // A system-level error (bad key, API not enabled, billing off, quota) shows up as the SAME
+  // error string on every single call — surface it distinctly from "just couldn't find this one
+  // address", since the fix (Google Cloud Console) is completely different from "add a city".
+  const systemErrors = [...new Set(geocoded.map(g => g.error).filter(Boolean))];
+  if (systemErrors.length > 0) warnings.push(`שגיאה מ-Google Maps: ${systemErrors.join(' | ')} — יש לבדוק ב-Google Cloud Console שה-API מופעל, שהחיוב פעיל, ושהמפתח לא מוגבל בטעות.`);
 
-  const validPoints = geocoded.map((g, i) => (g ? { i, ...g } : null)).filter(Boolean);
-  const matrix = validPoints.length >= 2 ? await distanceMatrix(validPoints.map(p => ({ lat: p.lat, lng: p.lng }))) : null;
-  if (validPoints.length >= 2 && !matrix) warnings.push('לא הצלחנו לקבל זמני נסיעה מ-Google Maps כרגע — כל השעות להלן הן הערכה גסה. כדאי לנסות שוב מאוחר יותר.');
+  const missing = [];
+  stopKeys.forEach((k, i) => { if (!geocoded[i + 1].location) missing.push(k); });
+  if (!geocoded[0].location) missing.push(`היעד (${destination})`);
+  if (missing.length > 0 && systemErrors.length === 0) warnings.push(`לא הצלחנו לאתר את המיקום עבור: ${missing.join(', ')}. יש לוודא שם מקום + עיר מדויקים. זמני הנסיעה עבור אלה יהיו הערכה גסה בלבד.`);
+
+  const validPoints = geocoded.map((g, i) => (g.location ? { i, ...g.location } : null)).filter(Boolean);
+  const { matrix, error: matrixError } = validPoints.length >= 2
+    ? await distanceMatrix(validPoints.map(p => ({ lat: p.lat, lng: p.lng })))
+    : { matrix: null, error: null };
+  if (matrixError) warnings.push(`שגיאת Distance Matrix מ-Google Maps: ${matrixError}`);
+  else if (validPoints.length >= 2 && !matrix) warnings.push('לא הצלחנו לקבל זמני נסיעה מ-Google Maps כרגע — כל השעות להלן הן הערכה גסה. כדאי לנסות שוב מאוחר יותר.');
 
   // Map original point index -> row/col index within `matrix` (only geocoded points have one).
   const matrixIndexOf = {};
