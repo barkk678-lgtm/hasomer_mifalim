@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2 } from 'lucide-react';
+import { ChevronDown, X, MapPin, Filter, FileSpreadsheet, ArrowUpDown, Trash2, Plus, Sparkles, Loader2 } from 'lucide-react';
 import { C, STATUS_TONE, DISTRICTS, ALL_MUNICIPALITIES } from '../lib/designSystem';
 import { exportToExcel } from '../lib/exportExcel';
 
@@ -340,11 +340,110 @@ export function HeaderFilterPopover({ label, type, value, onChange, options, sor
 // null there would still fail, where 0 is always valid regardless of nullability/defaults.
 function normalizeForCommit(type, v) {
   if (type === 'number' && v === '') return 0;
-  if ((type === 'select' || type === 'date') && v === '') return null;
+  if ((type === 'select' || type === 'ai-select' || type === 'date') && v === '') return null;
   return v;
 }
 
-function GridCell({ col, value, isGhost, onChange, onCommit }) {
+// Floating (portal-positioned) open/close + outside-click + reposition-on-scroll wiring shared
+// by CreatableSelectCell and AiBadgeCell — extracted so the table's overflow-hidden (for rounded
+// corners) never clips these dropdowns, same fix as HeaderFilterPopover above.
+function useFloatingMenu() {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function h(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) { setPos(null); return; }
+    function computePosition() {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right, width: Math.max(rect.width, 180) });
+    }
+    computePosition();
+    window.addEventListener('scroll', computePosition, true);
+    window.addEventListener('resize', computePosition);
+    return () => { window.removeEventListener('scroll', computePosition, true); window.removeEventListener('resize', computePosition); };
+  }, [open]);
+
+  return { open, setOpen, pos, btnRef, menuRef };
+}
+
+// Searchable supplier picker that also lets you save a brand-new supplier inline — matches the
+// original's SupplierCell (creatable combobox against the system-wide suppliers directory).
+function CreatableSelectCell({ value, options, placeholder, onCommit }) {
+  const { open, setOpen, pos, btnRef, menuRef } = useFloatingMenu();
+  const [search, setSearch] = useState('');
+
+  const trimmedSearch = search.trim();
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+  const exactMatch = options.some(o => o.toLowerCase() === trimmedSearch.toLowerCase());
+
+  function select(name) { onCommit(name); setOpen(false); setSearch(''); }
+  function createNew() { if (!trimmedSearch || exactMatch) return; select(trimmedSearch); }
+
+  return (
+    <div>
+      <button ref={btnRef} type="button" onClick={() => setOpen(o => !o)} className="w-full text-right text-xs px-2 py-1.5 rounded truncate hover:bg-black/5" style={{ color: value ? C.ink : C.inkSoft }}>
+        {value || placeholder || '+ בחר ספק'}
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-2" style={{ position: 'fixed', top: pos.top, right: pos.right, width: pos.width, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+          <input autoFocus value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && trimmedSearch && !exactMatch) createNew(); }} placeholder="חיפוש או הוספת ספק..." className="w-full text-xs rounded px-2 py-1.5 mb-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+          <div className="flex flex-col">
+            {filtered.map(o => <button key={o} type="button" onClick={() => select(o)} className="text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>{o}</button>)}
+            {filtered.length === 0 && !trimmedSearch && <p className="text-[11px] px-2 py-1" style={{ color: C.inkSoft }}>התחילו להקליד לחיפוש</p>}
+          </div>
+          {trimmedSearch && !exactMatch && (
+            <button type="button" onClick={createNew} className="w-full text-right text-xs px-2 py-1.5 mt-1 rounded font-semibold hover:bg-black/5 flex items-center gap-1.5" style={{ color: C.linkBlue }}>
+              <Plus size={12} /> צור ספק חדש: {`"${trimmedSearch}"`}
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// AI-classified value shown as a distinct "magic" pill (sparkle icon, steel tone) rather than a
+// plain dropdown — signals it was auto-filled, while a click still lets you override it manually.
+function AiBadgeCell({ value, options, isClassifying, onCommit }) {
+  const { open, setOpen, pos, btnRef, menuRef } = useFloatingMenu();
+
+  if (isClassifying) {
+    return <div className="flex items-center gap-1.5 px-2 py-1.5 text-[11px]" style={{ color: C.inkSoft }}><Loader2 size={12} className="animate-spin" /> מסווג עם AI...</div>;
+  }
+  return (
+    <div className="px-1 py-1">
+      <button ref={btnRef} type="button" onClick={() => setOpen(o => !o)}>
+        {value ? (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: C.steelSoft, color: C.steel }}><Sparkles size={10} /> {value}</span>
+        ) : (
+          <span className="text-[11px]" style={{ color: C.inkSoft }}>ימולא אוטומטית</span>
+        )}
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', top: pos.top, right: pos.right, minWidth: 150, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+          <button type="button" onClick={() => { onCommit(''); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.inkSoft }}>ללא</button>
+          {options.map(o => <button key={o} type="button" onClick={() => { onCommit(o); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>{o}</button>)}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function GridCell({ col, value, isGhost, onChange, onCommit, isClassifying }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
   const display = isGhost ? value : local;
@@ -361,6 +460,26 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
         <option value="">{isGhost ? `בחר ${col.label}` : '—'}</option>
         {col.options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
+    );
+  }
+  if (col.type === 'creatable-select') {
+    return (
+      <CreatableSelectCell
+        value={display || ''}
+        options={col.options || []}
+        placeholder={isGhost ? `+ בחר ${col.label}` : undefined}
+        onCommit={v => { setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(v); }}
+      />
+    );
+  }
+  if (col.type === 'ai-select') {
+    return (
+      <AiBadgeCell
+        value={display || ''}
+        options={col.options || []}
+        isClassifying={isClassifying}
+        onCommit={v => { setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(normalizeForCommit('ai-select', v)); }}
+      />
     );
   }
   if (col.type === 'boolean') {
@@ -387,7 +506,7 @@ function GridCell({ col, value, isGhost, onChange, onCommit }) {
   );
 }
 
-export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft, onCreate, onUpdate, onDelete }) {
+export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft, onCreate, onUpdate, onDelete, getCellExtra }) {
   const [draft, setDraft] = useState(makeEmptyDraft());
   const [savingDraft, setSavingDraft] = useState(false);
 
@@ -438,6 +557,7 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
                       isGhost={isGhost}
                       onChange={v => (isGhost ? updateGhostDraft(col.key, v) : undefined)}
                       onCommit={!isGhost ? v => onUpdate(row.id, { [col.key]: v }) : undefined}
+                      {...(!isGhost && getCellExtra ? getCellExtra(row, col) : {})}
                     />
                   </td>
                 ))}

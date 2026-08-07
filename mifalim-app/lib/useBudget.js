@@ -13,6 +13,7 @@ export function useBudget(ownerType, ownerId) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [budgetError, setBudgetError] = useState('');
+  const [classifyingIds, setClassifyingIds] = useState(() => new Set());
   const expensesRef = useRef([]);
   const classifyTimers = useRef({});
   useEffect(() => { expensesRef.current = expenses; }, [expenses]);
@@ -86,6 +87,7 @@ export function useBudget(ownerType, ownerId) {
     if (!description || !supplier) return;
     clearTimeout(classifyTimers.current[row.id]);
     classifyTimers.current[row.id] = setTimeout(async () => {
+      setClassifyingIds(s => new Set(s).add(row.id));
       try {
         const res = await fetch('/api/classify-expense', {
           method: 'POST',
@@ -98,6 +100,7 @@ export function useBudget(ownerType, ownerId) {
         const current = expensesRef.current.find(r => r.id === row.id);
         if (current && !current.expense_type) await updateExpense(row.id, { expense_type: type });
       } catch { /* silent — leave expense_type empty for manual selection */ }
+      finally { setClassifyingIds(s => { const n = new Set(s); n.delete(row.id); return n; }); }
     }, 300);
   }
 
@@ -129,5 +132,5 @@ export function useBudget(ownerType, ownerId) {
     setExpenses(prev => prev.filter(r => r.id !== id));
   }
 
-  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError };
+  return { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds };
 }

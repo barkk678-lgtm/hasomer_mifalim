@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, Trash2, Link2 } from 'lucide-react';
 import { useMegaProject } from '../lib/useMegaProject';
 import { useBudget } from '../lib/useBudget';
+import { useSuppliers } from '../lib/useSuppliers';
 import { C, ALL_TYPES, ACTIVE_STATUSES, EXPENSE_TYPES } from '../lib/designSystem';
 import { StatusBadge, Badge, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
 
@@ -34,12 +35,13 @@ function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
 
 const EXPENSE_COLUMNS = [
   { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
-  { key: 'expense_type', label: 'סוג הוצאה', type: 'select', options: EXPENSE_TYPES },
-  { key: 'supplier_name', label: 'ספק', type: 'text' },
+  { key: 'supplier_name', label: 'ספק', type: 'creatable-select' },
+  { key: 'expense_type', label: 'סוג הוצאה', type: 'ai-select', options: EXPENSE_TYPES },
   { key: 'quantity', label: 'כמות', type: 'number' },
   { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
+  { key: 'notes', label: 'הערות', type: 'text' },
 ];
-function emptyExpenseDraft() { return { expense_name: '', expense_type: '', supplier_name: '', quantity: '', unit_price: '' }; }
+function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', expense_type: '', quantity: '', unit_price: '', notes: '' }; }
 
 function LinkMifalModal({ open, onClose, allMifalim, linkedIds, onLink, onUnlink }) {
   const [showAll, setShowAll] = useState(false);
@@ -93,7 +95,9 @@ function LinkMifalModal({ open, onClose, allMifalim, linkedIds, onLink, onUnlink
 export default function MegaProjectDetailView({ megaProjectId }) {
   const router = useRouter();
   const { megaProject, linkedMifalim, allMifalim, loading, linkMifal, unlinkMifal, deleteMegaProject } = useMegaProject(megaProjectId);
-  const { income, expenses, loading: budgetLoading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError } = useBudget('mega_project', megaProjectId);
+  const { income, expenses, loading: budgetLoading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds } = useBudget('mega_project', megaProjectId);
+  const { suppliers } = useSuppliers();
+  const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
   const [linkOpen, setLinkOpen] = useState(false);
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
@@ -245,13 +249,14 @@ export default function MegaProjectDetailView({ megaProjectId }) {
 
           <Card title="הוצאות (על)">
             <InlineGrid
-              columns={EXPENSE_COLUMNS}
+              columns={expenseColumns}
               computedColumns={[{ key: 'total', label: 'סה"כ', compute: r => money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0)) }]}
               rows={expenses}
               makeEmptyDraft={emptyExpenseDraft}
               onCreate={addExpense}
               onUpdate={updateExpense}
               onDelete={deleteExpense}
+              getCellExtra={(row, col) => (col.key === 'expense_type' ? { isClassifying: classifyingIds.has(row.id) } : {})}
             />
           </Card>
         </>

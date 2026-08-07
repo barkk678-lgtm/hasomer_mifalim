@@ -8,6 +8,7 @@ import BusLogisticsTab from './BusLogisticsTab';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
 import { useBudget } from '../lib/useBudget';
+import { useSuppliers } from '../lib/useSuppliers';
 import { useStakeholders } from '../lib/useStakeholders';
 import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
@@ -507,16 +508,19 @@ function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
 
 const EXPENSE_COLUMNS = [
   { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
-  { key: 'expense_type', label: 'סוג הוצאה', type: 'select', options: EXPENSE_TYPES },
-  { key: 'supplier_name', label: 'ספק', type: 'text' },
+  { key: 'supplier_name', label: 'ספק', type: 'creatable-select' },
+  { key: 'expense_type', label: 'סוג הוצאה', type: 'ai-select', options: EXPENSE_TYPES },
   { key: 'quantity', label: 'כמות', type: 'number' },
   { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
+  { key: 'notes', label: 'הערות', type: 'text' },
 ];
-function emptyExpenseDraft() { return { expense_name: '', expense_type: '', supplier_name: '', quantity: '', unit_price: '' }; }
+function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', expense_type: '', quantity: '', unit_price: '', notes: '' }; }
 
 function BudgetTab({ mifalId }) {
-  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError } = useBudget('mifal', mifalId);
+  const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds } = useBudget('mifal', mifalId);
+  const { suppliers } = useSuppliers();
   const { tiers } = usePricingTiers(mifalId);
+  const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
 
   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
   const totalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0) + tiersIncome;
@@ -563,13 +567,14 @@ function BudgetTab({ mifalId }) {
 
       <Card title="הוצאות">
         <InlineGrid
-          columns={EXPENSE_COLUMNS}
+          columns={expenseColumns}
           computedColumns={[{ key: 'total', label: 'סה"כ', compute: r => money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0)) }]}
           rows={expenses}
           makeEmptyDraft={emptyExpenseDraft}
           onCreate={addExpense}
           onUpdate={updateExpense}
           onDelete={deleteExpense}
+          getCellExtra={(row, col) => (col.key === 'expense_type' ? { isClassifying: classifyingIds.has(row.id) } : {})}
         />
       </Card>
     </div>
