@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from './supabaseClient';
 
 const EXPENSE_SELECT = '*, suppliers(name)';
@@ -13,6 +13,9 @@ export function useBudget(ownerType, ownerId) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [budgetError, setBudgetError] = useState('');
+  const expensesRef = useRef([]);
+  const classifyTimers = useRef({});
+  useEffect(() => { expensesRef.current = expenses; }, [expenses]);
 
   const reload = useCallback(async () => {
     if (!ownerId) return;
@@ -73,6 +76,31 @@ export function useBudget(ownerType, ownerId) {
     return { patch: { ...rest, supplier_id: id }, error: null };
   }
 
+  // Auto-fills expense_type via the /api/classify-expense route (OpenAI, server-side key) once
+  // both expense_name and supplier_name are known — mirrors the original demo's maybeClassify:
+  // debounced, never overwrites a type the user already picked, silent on failure.
+  function maybeClassifyExpense(row) {
+    if (!row || row.expense_type) return;
+    const description = row.expense_name?.trim();
+    const supplier = row.supplier_name?.trim();
+    if (!description || !supplier) return;
+    clearTimeout(classifyTimers.current[row.id]);
+    classifyTimers.current[row.id] = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/classify-expense', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ supplier, description }),
+        });
+        if (!res.ok) return;
+        const { type } = await res.json();
+        if (!type) return;
+        const current = expensesRef.current.find(r => r.id === row.id);
+        if (current && !current.expense_type) await updateExpense(row.id, { expense_type: type });
+      } catch { /* silent — leave expense_type empty for manual selection */ }
+    }, 300);
+  }
+
   async function addExpense(row) {
     setBudgetError('');
     const { patch: resolved, error: resolveError } = await resolvePatch(row);
@@ -81,6 +109,7 @@ export function useBudget(ownerType, ownerId) {
     if (error) { console.error('שגיאה בהוספת הוצאה:', error); setBudgetError(`שגיאה בהוספת הוצאה: ${error.message}`); return null; }
     const withName = withSupplierName(data);
     setExpenses(prev => [...prev, withName]);
+    maybeClassifyExpense(withName);
     return withName;
   }
   async function updateExpense(id, patch) {
@@ -91,6 +120,7 @@ export function useBudget(ownerType, ownerId) {
     if (error) { console.error('שגיאה בעדכון הוצאה:', error); setBudgetError(`שגיאה בעדכון הוצאה: ${error.message}`); return null; }
     const withName = withSupplierName(data);
     setExpenses(prev => prev.map(r => (r.id === id ? withName : r)));
+    maybeClassifyExpense(withName);
     return withName;
   }
   async function deleteExpense(id) {
