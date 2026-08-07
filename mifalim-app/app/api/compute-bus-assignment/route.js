@@ -1,29 +1,30 @@
 import { NextResponse } from 'next/server';
-import { geocodeAddress, distanceMatrix } from '../../../lib/server/googleMaps';
+import { resolveLocation, distanceMatrix } from '../../../lib/server/googleMaps';
 import { computeBusAssignment } from '../../../lib/busAssignmentEngine';
-
-function fullAddress(place, city) {
-  const parts = [place, city].map(s => (s || '').trim()).filter(Boolean);
-  return parts.join(', ');
-}
 
 export async function POST(request) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return NextResponse.json({ error: 'לא הוגדר מפתח Google Maps בשרת.' }, { status: 400 });
 
-  const { groups, busTypes, destination, destinationCity, arrivalTime } = await request.json();
+  const { groups, busTypes, destination, destinationPlaceId, arrivalTime } = await request.json();
   if (!Array.isArray(groups) || groups.length === 0) return NextResponse.json({ error: 'אין קבוצות לשבץ.' }, { status: 400 });
   if (!Array.isArray(busTypes) || busTypes.length === 0) return NextResponse.json({ error: 'אין סוגי אוטובוסים מוגדרים.' }, { status: 400 });
   if (!destination?.trim()) return NextResponse.json({ error: 'חסר יעד סופי.' }, { status: 400 });
 
   const warnings = [];
   const stopKeys = [...new Set(groups.map(g => g.pickup_point).filter(Boolean))];
-  const stopCityByKey = {};
-  groups.forEach(g => { if (g.pickup_point && g.city) stopCityByKey[g.pickup_point] = g.city; });
+  // A pickup point picked from the autocomplete dropdown carries a place_id (exact, no
+  // ambiguity); free-typed text without a selection has none and falls back to geocoding the
+  // raw text. If the same pickup_point text appears on several rows, use whichever has a place_id.
+  const stopPlaceIdByKey = {};
+  groups.forEach(g => { if (g.pickup_point && g.place_id && !stopPlaceIdByKey[g.pickup_point]) stopPlaceIdByKey[g.pickup_point] = g.place_id; });
 
   // Index 0 is always the destination; the rest are pickup points, in stopKeys order.
-  const addresses = [fullAddress(destination, destinationCity), ...stopKeys.map(k => fullAddress(k, stopCityByKey[k]))];
-  const geocoded = await Promise.all(addresses.map(a => geocodeAddress(a)));
+  const points = [
+    { text: destination, placeId: destinationPlaceId },
+    ...stopKeys.map(k => ({ text: k, placeId: stopPlaceIdByKey[k] || null })),
+  ];
+  const geocoded = await Promise.all(points.map(p => resolveLocation(p)));
 
   // A system-level error (bad key, API not enabled, billing off, quota) shows up as the SAME
   // error string on every single call — surface it distinctly from "just couldn't find this one
@@ -34,7 +35,7 @@ export async function POST(request) {
   const missing = [];
   stopKeys.forEach((k, i) => { if (!geocoded[i + 1].location) missing.push(k); });
   if (!geocoded[0].location) missing.push(`היעד (${destination})`);
-  if (missing.length > 0 && systemErrors.length === 0) warnings.push(`לא הצלחנו לאתר את המיקום עבור: ${missing.join(', ')}. יש לוודא שם מקום + עיר מדויקים. זמני הנסיעה עבור אלה יהיו הערכה גסה בלבד.`);
+  if (missing.length > 0 && systemErrors.length === 0) warnings.push(`לא הצלחנו לאתר את המיקום עבור: ${missing.join(', ')}. כדאי לבחור מתוך רשימת ההצעות שנפתחת בהקלדה (לא רק להקליד טקסט חופשי). זמני הנסיעה עבור אלה יהיו הערכה גסה בלבד.`);
 
   const validPoints = geocoded.map((g, i) => (g.location ? { i, ...g.location } : null)).filter(Boolean);
   const { matrix, error: matrixError } = validPoints.length >= 2

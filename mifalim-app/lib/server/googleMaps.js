@@ -6,16 +6,22 @@
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 const DISTANCE_MATRIX_URL = 'https://maps.googleapis.com/maps/api/distancematrix/json';
 
+// Resolves a point to {lat,lng}. Prefers a Places `placeId` (picked from the autocomplete
+// dropdown — unambiguous, exact) over free-text `text` (fallback for anything typed without
+// selecting a suggestion, which is inherently ambiguous — "כיכר העירייה" exists in many cities).
+//
 // Returns { location: {lat,lng}|null, error: string|null }. `error` carries Google's own reason
 // (status + error_message, e.g. "REQUEST_DENIED: This API project is not authorized to use this
 // API") whenever the call didn't cleanly succeed — silently returning null for every failure mode
 // makes an API-key/billing/enablement problem indistinguishable from a genuinely bad address.
-export async function geocodeAddress(address) {
+export async function resolveLocation({ text, placeId }) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  const trimmed = (address || '').trim();
+  const trimmed = (text || '').trim();
   if (!apiKey) return { location: null, error: 'לא הוגדר מפתח Google Maps בשרת.' };
-  if (!trimmed) return { location: null, error: null };
-  const url = `${GEOCODE_URL}?address=${encodeURIComponent(trimmed)}&region=il&language=he&key=${apiKey}`;
+  if (!placeId && !trimmed) return { location: null, error: null };
+  const url = placeId
+    ? `${GEOCODE_URL}?place_id=${encodeURIComponent(placeId)}&language=he&key=${apiKey}`
+    : `${GEOCODE_URL}?address=${encodeURIComponent(trimmed)}&region=il&language=he&key=${apiKey}`;
   try {
     const res = await fetch(url);
     const data = await res.json();

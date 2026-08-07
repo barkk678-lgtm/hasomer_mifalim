@@ -2,12 +2,12 @@ import * as XLSX from 'xlsx';
 
 export function uid(p = 'id') { return `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
 
-export const BUS_TEMPLATE_HEADERS = ['שם הקבוצה', 'כמות', "נק' איסוף", 'עיר'];
+export const BUS_TEMPLATE_HEADERS = ['שם הקבוצה', 'כמות', "נק' איסוף"];
 
 export function downloadGroupsTemplate() {
-  const wsData = [BUS_TEMPLATE_HEADERS, ['לדוגמה: כיתה ז׳ 1', 40, 'לדוגמה: כיכר העירייה', 'לדוגמה: רעננה']];
+  const wsData = [BUS_TEMPLATE_HEADERS, ['לדוגמה: כיתה ז׳ 1', 40, 'לדוגמה: כיכר העירייה, רעננה']];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{ wch: 26 }, { wch: 10 }, { wch: 26 }, { wch: 16 }];
+  ws['!cols'] = [{ wch: 26 }, { wch: 10 }, { wch: 30 }];
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
   XLSX.utils.book_append_sheet(wb, ws, 'קבוצות');
@@ -36,7 +36,6 @@ export function parseGroupsExcel(file) {
           group_name: String(row['שם הקבוצה'] ?? '').trim(),
           quantity: Number(row['כמות']) || 0,
           pickup_point: String(row["נק' איסוף"] ?? '').trim(),
-          city: String(row['עיר'] ?? '').trim(),
         })).filter(g => g.group_name || g.pickup_point);
         resolve(groups);
       } catch (err) { reject(err instanceof Error ? err : new Error('שגיאה בקריאת הקובץ.')); }

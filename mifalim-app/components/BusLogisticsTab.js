@@ -4,17 +4,16 @@ import { Plus, Trash2, Bus, Upload, FileSpreadsheet, Wand2 } from 'lucide-react'
 import { useBusPlans } from '../lib/useBusPlans';
 import { useBusPlanDetail } from '../lib/useBusPlanDetail';
 import { C } from '../lib/designSystem';
-import { Card, IconButton, TextInput, Field, InlineGrid } from './ui';
+import { Card, IconButton, TextInput, Field, InlineGrid, PlacesAutocompleteInput } from './ui';
 import { uid, downloadGroupsTemplate, parseGroupsExcel } from '../lib/busBoardHelpers';
 import BusBoard from './BusBoard';
 
 const GROUP_COLUMNS = [
-  { key: 'pickup_point', label: "נק' איסוף", type: 'text' },
-  { key: 'city', label: 'עיר', type: 'text' },
+  { key: 'pickup_point', label: "נק' איסוף", type: 'places-autocomplete', extraKey: 'place_id' },
   { key: 'group_name', label: 'שם הקבוצה', type: 'text' },
   { key: 'quantity', label: 'כמות', type: 'number' },
 ];
-function emptyGroupDraft() { return { pickup_point: '', city: '', group_name: '', quantity: '' }; }
+function emptyGroupDraft() { return { pickup_point: '', group_name: '', quantity: '' }; }
 
 const BUS_TYPE_COLUMNS = [
   { key: 'label', label: 'שם סוג האוטובוס', type: 'text' },
@@ -25,7 +24,7 @@ function emptyBusTypeDraft() { return { label: '', capacity: '' }; }
 function BusPlanDetail({ plan, onUpdatePlan }) {
   const { busTypes, groups, board, loading, createBusType, updateBusType, deleteBusType, createGroup, updateGroup, deleteGroup, addGroupsBulk, updateBoard } = useBusPlanDetail(plan.id);
   const [destination, setDestination] = useState(plan.destination || '');
-  const [destinationCity, setDestinationCity] = useState(plan.destination_city || '');
+  const [destinationPlaceId, setDestinationPlaceId] = useState(plan.destination_place_id || null);
   const [arrivalTime, setArrivalTime] = useState(plan.arrival_time || '');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -73,7 +72,7 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
       const res = await fetch('/api/compute-bus-assignment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groups, busTypes, destination, destinationCity, arrivalTime }),
+        body: JSON.stringify({ groups, busTypes, destination, destinationPlaceId, arrivalTime }),
       });
       const data = await res.json();
       if (!res.ok) { setComputeError(data.error || 'שגיאה בחישוב הסידור.'); return; }
@@ -100,7 +99,15 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
         </div>
         {uploadError && <p className="text-xs mb-2" style={{ color: C.rust }}>{uploadError}</p>}
         <p className="text-xs mb-3" style={{ color: C.inkSoft }}>ואפשר גם להוסיף/לערוך ידנית ישירות בטבלה — כל שורה היא קבוצה שצריך לשבץ לאוטובוס.</p>
-        <InlineGrid columns={GROUP_COLUMNS} rows={groups} makeEmptyDraft={emptyGroupDraft} onCreate={createGroup} onUpdate={updateGroup} onDelete={deleteGroup} />
+        <InlineGrid
+          columns={GROUP_COLUMNS}
+          rows={groups}
+          makeEmptyDraft={emptyGroupDraft}
+          onCreate={createGroup}
+          onUpdate={updateGroup}
+          onDelete={deleteGroup}
+          getCellExtra={(row, col) => (col.key === 'pickup_point' ? { onSelectPlace: patch => updateGroup(row.id, patch) } : {})}
+        />
         {groups.length > 0 && <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>{'סה"כ'} {groups.length} קבוצות, {totalPeople} איש.</p>}
       </Card>
 
@@ -111,18 +118,20 @@ function BusPlanDetail({ plan, onUpdatePlan }) {
       </Card>
 
       <Card title="יעד סופי וחישוב">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="יעד סופי">
-            <TextInput value={destination} onChange={e => setDestination(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination })} placeholder="לדוגמה: כפר הנוער הדסים" />
-          </Field>
-          <Field label="עיר היעד">
-            <TextInput value={destinationCity} onChange={e => setDestinationCity(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { destination_city: destinationCity })} placeholder="לדוגמה: רעננה" />
+            <PlacesAutocompleteInput
+              value={destination}
+              placeholder="לדוגמה: כפר הנוער הדסים"
+              onSelect={({ description, placeId }) => { setDestination(description); setDestinationPlaceId(placeId); onUpdatePlan(plan.id, { destination: description, destination_place_id: placeId }); }}
+              onFreeTextCommit={text => { setDestination(text); setDestinationPlaceId(null); onUpdatePlan(plan.id, { destination: text, destination_place_id: null }); }}
+            />
           </Field>
           <Field label="שעת הגעה ליעד">
             <TextInput type="time" value={arrivalTime} onChange={e => setArrivalTime(e.target.value)} onBlur={() => onUpdatePlan(plan.id, { arrival_time: arrivalTime })} />
           </Field>
         </div>
-        <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>עיר היעד ועיר כל נקודת איסוף (בטבלת הקבוצות למעלה) נדרשות לחישוב מדויק — בלעדיהן ייתכנו טעויות מיקום.</p>
+        <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>יש לבחור יעד ונקודות איסוף מתוך רשימת ההצעות שנפתחת בהקלדה (כמו בחיפוש ב-Google Maps) לחישוב מדויק — הקלדת טקסט חופשי בלי לבחור הצעה עלולה לגרום לטעויות מיקום.</p>
         {computeError && <p className="text-xs mt-2" style={{ color: C.rust }}>{computeError}</p>}
         {computeWarnings.length > 0 && (
           <div className="rounded-lg px-3 py-2 mt-2 text-xs" style={{ background: C.ochreSoft, color: '#6B4C16' }}>

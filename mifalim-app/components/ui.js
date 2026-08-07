@@ -68,6 +68,91 @@ export function TextArea(props) {
   return <textarea {...props} className={`${inputBase} ${props.className || ''}`} style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} />;
 }
 
+// "Type and pick a real place" field, backed by Google Places Autocomplete via /api/places-
+// autocomplete (server-side — the API key never reaches the browser). Picking a suggestion is
+// unambiguous (an exact place_id); typing free text without picking one falls back to
+// best-effort geocoding by the raw text later, same as before this existed.
+export function PlacesAutocompleteInput({ value, onSelect, onFreeTextCommit, placeholder, className, style }) {
+  const [text, setText] = useState(value || '');
+  useEffect(() => { setText(value || ''); }, [value]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const inputRef = useRef(null);
+  const menuRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    function h(e) {
+      if (inputRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  function positionMenu() {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right, width: Math.max(rect.width, 220) });
+  }
+
+  function handleChange(e) {
+    const v = e.target.value;
+    setText(v);
+    clearTimeout(debounceRef.current);
+    if (!v.trim()) { setSuggestions([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/places-autocomplete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input: v }),
+        });
+        const data = await res.json();
+        setSuggestions(data.suggestions || []);
+        if ((data.suggestions || []).length > 0) { positionMenu(); setOpen(true); } else setOpen(false);
+      } catch { setSuggestions([]); setOpen(false); }
+    }, 300);
+  }
+
+  function select(s) {
+    setText(s.description);
+    setOpen(false);
+    setSuggestions([]);
+    onSelect({ description: s.description, placeId: s.placeId });
+  }
+
+  function handleBlur() {
+    setOpen(false);
+    if (onFreeTextCommit) onFreeTextCommit(text);
+  }
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={text}
+        onChange={handleChange}
+        onFocus={() => { if (suggestions.length > 0) { positionMenu(); setOpen(true); } }}
+        onBlur={handleBlur}
+        placeholder={placeholder}
+        className={className || `${inputBase}`}
+        style={style || inputStyle}
+      />
+      {open && pos && createPortal(
+        <div ref={menuRef} className="rounded-lg shadow-lg py-1" style={{ position: 'fixed', top: pos.top, right: pos.right, width: pos.width, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+          {suggestions.map(s => (
+            <button key={s.placeId} type="button" onMouseDown={e => e.preventDefault()} onClick={() => select(s)} className="w-full text-right text-xs px-3 py-2 hover:bg-black/5 flex items-center gap-1.5" style={{ color: C.ink }}>
+              <MapPin size={11} style={{ color: C.forestLight, flexShrink: 0 }} /> {s.description}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export function Select({ children, ...props }) {
   return (
     <div className="relative">
@@ -443,7 +528,7 @@ function AiBadgeCell({ value, options, isClassifying, onCommit }) {
   );
 }
 
-function GridCell({ col, value, isGhost, onChange, onCommit, isClassifying }) {
+function GridCell({ col, value, isGhost, onChange, onCommit, isClassifying, onSelectPlace }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
   const display = isGhost ? value : local;
@@ -479,6 +564,25 @@ function GridCell({ col, value, isGhost, onChange, onCommit, isClassifying }) {
         options={col.options || []}
         isClassifying={isClassifying}
         onCommit={v => { setLocal(v); onChange(v); if (!isGhost) onCommit && onCommit(normalizeForCommit('ai-select', v)); }}
+      />
+    );
+  }
+  if (col.type === 'places-autocomplete') {
+    const extraKey = col.extraKey || 'place_id';
+    return (
+      <PlacesAutocompleteInput
+        value={display || ''}
+        placeholder={isGhost ? `+ ${col.label}` : undefined}
+        className={inputBase}
+        style={cellStyle}
+        onSelect={({ description, placeId }) => {
+          setLocal(description); onChange(description);
+          if (!isGhost) { if (onSelectPlace) onSelectPlace({ [col.key]: description, [extraKey]: placeId }); else onCommit && onCommit(description); }
+        }}
+        onFreeTextCommit={text => {
+          setLocal(text); onChange(text);
+          if (!isGhost) { if (onSelectPlace) onSelectPlace({ [col.key]: text, [extraKey]: null }); else onCommit && onCommit(text); }
+        }}
       />
     );
   }
