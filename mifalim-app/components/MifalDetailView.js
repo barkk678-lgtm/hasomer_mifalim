@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
+import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Bus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon, ChevronRight, ChevronLeft } from 'lucide-react';
 import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
 import BusLogisticsTab from './BusLogisticsTab';
 import { useMifal } from '../lib/useMifal';
@@ -335,35 +335,85 @@ function OccurrencesTab({ mifal }) {
 }
 
 /* ============================== FILES TAB ============================== */
-// One drag/click drop-zone per required document type — a quick visual "is this here yet"
-// status (red/dashed when empty, green once at least one file is tagged with it) doubling as
-// the upload target, instead of a whole separate table section per mandatory category.
-function RequiredDocSquare({ docType, files, onUpload, onDownload, onRemove }) {
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+function extOf(name) { const i = (name || '').lastIndexOf('.'); return i > 0 ? name.slice(i + 1).toLowerCase() : ''; }
+function fileIconMeta(name) {
+  const ext = extOf(name);
+  if (IMAGE_EXTENSIONS.includes(ext)) return { Icon: ImageIcon, color: C.steel };
+  if (ext === 'pdf') return { Icon: FileText, color: C.rust };
+  if (['doc', 'docx'].includes(ext)) return { Icon: FileText, color: C.linkBlue };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { Icon: FileSpreadsheet, color: C.greenGood };
+  return { Icon: FileIcon, color: C.inkSoft };
+}
+// Every draggable file chip (in any box, required or general) carries just its id — dropped on
+// any other box, that box's onDrop resolves it as a move/recategorize rather than a new upload.
+function fileDragProps(f) {
+  return { draggable: true, onDragStart: e => { e.dataTransfer.setData('text/plain', JSON.stringify({ fileId: f.id })); } };
+}
+// A drop can be either real OS files (a new upload) or an internal drag payload (moving an
+// existing file from another box) — same handler covers both, dispatching by which one it sees.
+function handleBoxDrop(e, targetCategory, onUpload, onRecategorize) {
+  e.preventDefault();
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) { onUpload(e.dataTransfer.files, targetCategory); return; }
+  try {
+    const payload = JSON.parse(e.dataTransfer.getData('text/plain'));
+    if (payload?.fileId) onRecategorize(payload.fileId, targetCategory);
+  } catch { /* not our payload — ignore */ }
+}
+function uploadedByLine(f) {
+  const date = f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : '';
+  return `הועלה ${date}${f.profiles?.full_name ? ` ע"י ${f.profiles.full_name}` : ''}`;
+}
+
+// One drag/click drop-zone per required document type — doubles as upload target (OS file drag,
+// or dragging a file chip in from another box) and status indicator (red/dashed while empty,
+// green once at least one file is tagged with it). Shows one file at a time (big icon/preview +
+// upload date/uploader), with paging when more than one file shares the same required type.
+function RequiredDocSquare({ docType, files, onUpload, onDownload, onRemove, onRecategorize, getDownloadUrl }) {
   const [dragActive, setDragActive] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const myFiles = files.filter(f => f.category === docType);
   const has = myFiles.length > 0;
+  const current = has ? myFiles[Math.min(idx, myFiles.length - 1)] : null;
   const toneColor = has ? C.greenGood : C.rust;
   const toneSoft = has ? C.greenGoodSoft : C.rustSoft;
+  const meta = current ? fileIconMeta(current.name) : null;
+
+  useEffect(() => {
+    setPreviewUrl(null);
+    if (current && IMAGE_EXTENSIONS.includes(extOf(current.name))) getDownloadUrl(current, 3600).then(setPreviewUrl);
+  }, [current?.id]);
+
   return (
     <div
       onDragOver={e => { e.preventDefault(); setDragActive(true); }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false); }}
-      onDrop={e => { e.preventDefault(); setDragActive(false); onUpload(e.dataTransfer.files, docType); }}
+      onDrop={e => { setDragActive(false); handleBoxDrop(e, docType, onUpload, onRecategorize); }}
       className="rounded-xl p-3 flex flex-col transition-colors"
       style={{ aspectRatio: '1 / 1', border: `2px ${has ? 'solid' : 'dashed'} ${dragActive ? C.ochre : toneColor}`, background: dragActive ? C.ochreSoft : toneSoft }}
     >
       <div className="text-xs font-bold text-center mb-2" style={{ color: toneColor }}>{docType}</div>
       {has ? (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
-          {myFiles.map(f => (
-            <div key={f.id} className="flex items-center justify-between gap-1 text-[10px] rounded px-1.5 py-1" style={{ background: '#fff' }}>
-              <button onClick={() => onDownload(f)} className="truncate text-right flex-1 hover:underline" style={{ color: C.forestDark }} title={f.name}>{f.name}</button>
-              <button onClick={() => onRemove(f)} className="shrink-0"><Trash2 size={11} style={{ color: C.rust }} /></button>
-            </div>
-          ))}
+        <div {...fileDragProps(current)} className="flex-1 min-h-0 flex flex-col items-center justify-center gap-1 cursor-grab">
+          {previewUrl ? (
+            <img src={previewUrl} alt={current.name} className="max-h-16 max-w-full rounded object-contain" />
+          ) : (
+            <meta.Icon size={40} style={{ color: meta.color }} />
+          )}
+          <button onClick={() => onDownload(current)} className="text-[10px] font-semibold truncate max-w-full hover:underline" style={{ color: C.forestDark }} title={current.name}>{current.name}</button>
+          <div className="text-[9px] text-center" style={{ color: C.inkSoft }}>{uploadedByLine(current)}</div>
+          <button onClick={() => onRemove(current)} className="text-[9px] font-semibold" style={{ color: C.rust }}>מחיקה</button>
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center text-[11px] text-center" style={{ color: C.rust }}>גררו קובץ לכאן</div>
+      )}
+      {myFiles.length > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-1 text-[10px] font-semibold" style={{ color: C.inkSoft }}>
+          <button onClick={() => setIdx(i => (i - 1 + myFiles.length) % myFiles.length)}><ChevronRight size={13} /></button>
+          <span>{idx + 1}/{myFiles.length}</span>
+          <button onClick={() => setIdx(i => (i + 1) % myFiles.length)}><ChevronLeft size={13} /></button>
+        </div>
       )}
       <label className="mt-2 text-[10px] font-semibold text-center py-1.5 rounded cursor-pointer" style={{ background: '#fff', color: C.forestDark, border: `1px solid ${C.line}` }}>
         + הוספת קובץ
@@ -373,49 +423,47 @@ function RequiredDocSquare({ docType, files, onUpload, onDownload, onRemove }) {
   );
 }
 
-// All non-mandatory files in one table, grouped by category (section header row, then its
-// files) instead of a separate card+table per category.
-function GeneralFilesTable({ files, categories, onRemove, onRecategorize, onDownload }) {
+// General (non-mandatory) files box, one per broad category — same drag-to-tag / drag-to-move
+// interaction as the required squares, just listing every file in the category rather than
+// paging through one at a time (these can hold many more files than a "one required doc" slot).
+function GeneralFileBox({ category, files, onUpload, onDownload, onRemove, onRecategorize }) {
+  const [dragActive, setDragActive] = useState(false);
+  const rows = files.filter(f => f.category === category);
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr style={{ background: '#E3E4D6' }}>
-            {['שם הקובץ', 'קטגוריה', 'גודל', 'עודכן', 'עודכן ע"י', 'הורדה', ''].map(h => (
-              <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {categories.map(cat => {
-            const rows = files.filter(f => f.category === cat);
+    <div
+      onDragOver={e => { e.preventDefault(); setDragActive(true); }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false); }}
+      onDrop={e => { setDragActive(false); handleBoxDrop(e, category, onUpload, onRecategorize); }}
+      className="rounded-xl p-3 flex flex-col transition-colors"
+      style={{ minHeight: 220, border: dragActive ? `2px dashed ${C.ochre}` : `1px solid ${C.line}`, background: dragActive ? C.ochreSoft : C.surface }}
+    >
+      <div className="text-xs font-bold mb-2 flex items-center justify-between" style={{ color: C.forestDark }}>
+        <span>{category}</span>
+        <span style={{ color: C.inkSoft }}>({rows.length})</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-[11px] text-center" style={{ color: C.inkSoft }}>גררו קובץ לכאן</div>
+      ) : (
+        <div className="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto">
+          {rows.map(f => {
+            const meta = fileIconMeta(f.name);
             return (
-              <Fragment key={cat}>
-                <tr style={{ background: C.steelSoft, borderTop: `1px solid ${C.line}` }}>
-                  <td colSpan={7} className="px-3 py-1.5 text-xs font-bold" style={{ color: C.forestDark }}>{cat} ({rows.length})</td>
-                </tr>
-                {rows.length === 0 ? (
-                  <tr style={{ borderTop: `1px solid ${C.line}` }}><td colSpan={7} className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו.</td></tr>
-                ) : rows.map((f, i) => (
-                  <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-                    <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
-                    <td className="px-3 py-2">
-                      <select value={f.category || cat} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
-                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
-                    <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
-                    <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
-                  </tr>
-                ))}
-              </Fragment>
+              <div key={f.id} {...fileDragProps(f)} className="flex items-center gap-2 text-[11px] rounded-lg px-2 py-1.5 cursor-grab" style={{ background: '#fff', border: `1px solid ${C.line}` }}>
+                <meta.Icon size={16} style={{ color: meta.color, flexShrink: 0 }} />
+                <div className="flex-1 min-w-0">
+                  <button onClick={() => onDownload(f)} className="font-medium truncate block w-full text-right hover:underline" style={{ color: C.forestDark }} title={f.name}>{f.name}</button>
+                  <div className="text-[10px]" style={{ color: C.inkSoft }}>{uploadedByLine(f)}</div>
+                </div>
+                <button onClick={() => onRemove(f)} className="shrink-0"><Trash2 size={12} style={{ color: C.rust }} /></button>
+              </div>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      )}
+      <label className="mt-2 text-[10px] font-semibold text-center py-1.5 rounded cursor-pointer" style={{ background: '#fff', color: C.forestDark, border: `1px solid ${C.line}` }}>
+        + הוספת קובץ
+        <input type="file" multiple className="hidden" onChange={e => { onUpload(e.target.files, category); e.target.value = ''; }} />
+      </label>
     </div>
   );
 }
@@ -439,22 +487,21 @@ function FilesTab({ mifalId }) {
       {loading ? <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p> : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {REQUIRED_FILE_CATEGORIES.map(docType => (
-            <RequiredDocSquare key={docType} docType={docType} files={files} onUpload={uploadFiles} onDownload={handleDownload} onRemove={deleteFile} />
+            <RequiredDocSquare key={docType} docType={docType} files={files} onUpload={uploadFiles} onDownload={handleDownload} onRemove={deleteFile} onRecategorize={recategorizeFile} getDownloadUrl={getDownloadUrl} />
           ))}
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצים נוספים</h3>
-        <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
-          העלאת קובץ
-          <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, GENERAL_FILE_CATEGORIES[0]); e.target.value = ''; }} />
-        </label>
-      </div>
+      <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>קבצים נוספים</h3>
+      <p className="text-[11px] mb-3" style={{ color: C.inkSoft }}>גררו קובץ לתוך אחת התיבות למטה כדי לתייג אותו, או גררו קובץ קיים בין תיבות (כולל מ/אל מסמכי החובה) כדי לשנות את התיוג שלו.</p>
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
       ) : (
-        <GeneralFilesTable files={files} categories={GENERAL_FILE_CATEGORIES} onRemove={deleteFile} onRecategorize={recategorizeFile} onDownload={handleDownload} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {GENERAL_FILE_CATEGORIES.map(category => (
+            <GeneralFileBox key={category} category={category} files={files} onUpload={uploadFiles} onDownload={handleDownload} onRemove={deleteFile} onRecategorize={recategorizeFile} />
+          ))}
+        </div>
       )}
     </div>
   );

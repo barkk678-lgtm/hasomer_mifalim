@@ -69,8 +69,10 @@ export function useFiles(ownerType, ownerId) {
     setFiles(prev => prev.filter(x => x.id !== f.id));
   }
 
-  async function getDownloadUrl(f) {
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(f.storage_path, 60);
+  // expiresIn defaults to 60s (a click-through download link, used immediately); pass a longer
+  // value for a URL that needs to stay valid while displayed inline (e.g. an image thumbnail).
+  async function getDownloadUrl(f, expiresIn = 60) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(f.storage_path, expiresIn);
     if (error) { console.error('שגיאה ביצירת קישור הורדה:', error); return null; }
     return data.signedUrl;
   }
