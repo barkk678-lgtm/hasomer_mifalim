@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
@@ -16,6 +16,7 @@ import { useFiles } from '../lib/useFiles';
 import { usePreparations } from '../lib/usePreparations';
 import { C, ALL_TYPES, FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
+import CrossFilterDonutChart from './CrossFilterDonutChart';
 
 const UNASSIGNED = '__unassigned__';
 
@@ -521,6 +522,15 @@ function BudgetTab({ mifalId }) {
   const { suppliers } = useSuppliers();
   const { tiers } = usePricingTiers(mifalId);
   const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
+  const [expenseTypeFilter, setExpenseTypeFilter] = useState([]);
+  function toggleExpenseType(key) { setExpenseTypeFilter(f => (f.includes(key) ? f.filter(k => k !== key) : [...f, key])); }
+  function expenseTypeOf(e) { return e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג'; }
+  const expenseChartData = useMemo(() => {
+    const totals = {};
+    expenses.forEach(e => { const t = expenseTypeOf(e); totals[t] = (totals[t] || 0) + (Number(e.quantity) || 0) * (Number(e.unit_price) || 0); });
+    return Object.entries(totals).filter(([, v]) => v > 0).map(([name, value]) => ({ key: name, name, value }));
+  }, [expenses]);
+  const filteredExpenses = expenseTypeFilter.length === 0 ? expenses : expenses.filter(e => expenseTypeFilter.includes(expenseTypeOf(e)));
 
   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
   const totalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0) + tiersIncome;
@@ -565,11 +575,17 @@ function BudgetTab({ mifalId }) {
         />
       </Card>
 
+      {expenseChartData.length > 0 && (
+        <div className="mb-4">
+          <CrossFilterDonutChart title="הוצאות לפי סוג" unitLabel="סכום" data={expenseChartData} selected={expenseTypeFilter} onToggle={toggleExpenseType} valueFormatter={money} />
+        </div>
+      )}
+
       <Card title="הוצאות">
         <InlineGrid
           columns={expenseColumns}
           computedColumns={[{ key: 'total', label: 'סה"כ', compute: r => money((Number(r.quantity) || 0) * (Number(r.unit_price) || 0)) }]}
-          rows={expenses}
+          rows={filteredExpenses}
           makeEmptyDraft={emptyExpenseDraft}
           onCreate={addExpense}
           onUpdate={updateExpense}

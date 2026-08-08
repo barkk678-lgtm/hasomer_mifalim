@@ -524,7 +524,7 @@ function AiBadgeCell({ value, options, isClassifying, onCommit }) {
         )}
       </button>
       {open && pos && createPortal(
-        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }), right: pos.right, minWidth: 150, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }), right: pos.right, width: 176, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
           <button type="button" onClick={() => { onCommit(''); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.inkSoft }}>ללא</button>
           {options.map(o => <button key={o} type="button" onClick={() => { onCommit(o); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>{o}</button>)}
         </div>,

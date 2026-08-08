@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Layers } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList, ResponsiveContainer } from 'recharts';
@@ -28,6 +28,10 @@ function effectiveStatus(m) {
   return m.status || 'מתוכנן';
 }
 function yearOf(m) { const { start } = getRelevantDates(m); return start ? new Date(start).getFullYear() : null; }
+// A mega project has no event date of its own — its direct ("own") expenses are scoped to a
+// year by when the project record itself was created, so the current/all-years toggle still
+// applies consistently to them.
+function megaYearOf(mp) { return mp.created_at ? new Date(mp.created_at).getFullYear() : null; }
 
 // Custom Y-axis tick: under dir="rtl", SVG text-anchor is direction-relative, so forcing
 // direction:ltr + unicodeBidi:bidi-override makes textAnchor="end" resolve to the visual right.
@@ -58,12 +62,24 @@ function FinKPIBlock({ label, value, tone, lines, bordered }) {
 }
 
 /* ============================== EXPENSE-TYPE BI ANALYTICS ============================== */
-function buildExpenseRecords(scopedMifalim) {
+// scopedMegaProjects covers a mega project's OWN direct expenses (not tied to any specific
+// linked mifal) — without this they were invisible from the by-expense-type breakdown entirely.
+function buildExpenseRecords(scopedMifalim, scopedMegaProjects = []) {
   const records = [];
   scopedMifalim.forEach(m => (m.expenseRows || []).forEach(e => {
     records.push({
-      id: `${m.id}_${e.expense_name}_${e.supplier}_${e.quantity}_${e.unit_price}`,
-      mifalId: m.id, mifalName: m.name,
+      id: `mifal_${m.id}_${e.expense_name}_${e.supplier}_${e.quantity}_${e.unit_price}`,
+      ownerKind: 'mifal', ownerId: m.id, ownerName: m.name,
+      expense_type: e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג',
+      supplier: e.suppliers?.name && e.suppliers.name.trim() ? e.suppliers.name.trim() : 'לא צוין',
+      expense_name: e.expense_name || '',
+      total: (Number(e.quantity) || 0) * (Number(e.unit_price) || 0),
+    });
+  }));
+  scopedMegaProjects.forEach(mp => (mp.expenseRows || []).forEach(e => {
+    records.push({
+      id: `mega_${mp.id}_${e.expense_name}_${e.supplier}_${e.quantity}_${e.unit_price}`,
+      ownerKind: 'mega', ownerId: mp.id, ownerName: mp.name,
       expense_type: e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג',
       supplier: e.suppliers?.name && e.suppliers.name.trim() ? e.suppliers.name.trim() : 'לא צוין',
       expense_name: e.expense_name || '',
@@ -103,6 +119,19 @@ function buildExpenseHierarchy(records) {
     .sort((a, b) => b.total - a.total);
 }
 
+// Manual rotate+translate (not the XAxis angle/textAnchor props) — under dir="rtl", SVG
+// text-anchor is direction-relative just like the Y-axis tick above, which was pushing these
+// labels up into the bars instead of below the axis line. A raw transform sidesteps that.
+function FinXAxisAngledTick({ x, y, payload }) {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={10} textAnchor="end" transform="rotate(-25)" fill={C.inkSoft} fontSize="11px" fontFamily="Heebo, sans-serif">
+        {payload.value}
+      </text>
+    </g>
+  );
+}
+
 function TopSuppliersBarChart({ rows, scopeLabel }) {
   return (
     <div className="rounded-2xl p-5" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
@@ -114,7 +143,7 @@ function TopSuppliersBarChart({ rows, scopeLabel }) {
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={rows} margin={{ bottom: rows.length > 4 ? 55 : 25, top: 20, left: 15, right: 10 }}>
             <CartesianGrid vertical={false} stroke={C.line} strokeDasharray="3 3" />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Heebo', fill: C.inkSoft }} interval={0} angle={rows.length > 4 ? -25 : 0} textAnchor={rows.length > 4 ? 'end' : 'middle'} height={rows.length > 4 ? 55 : 30} />
+            <XAxis dataKey="name" tick={rows.length > 4 ? <FinXAxisAngledTick /> : { fontSize: 11, fontFamily: 'Heebo', fill: C.inkSoft }} interval={0} height={rows.length > 4 ? 55 : 30} />
             <YAxis width={85} tick={<FinYAxisTick />} axisLine={{ stroke: C.line }} tickLine={false} />
             <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={350} animationEasing="ease-out">
               {rows.map((r, i) => <Cell key={i} fill={r.isOther ? C.sage : FIN_PASTEL_COLORS[i % FIN_PASTEL_COLORS.length]} />)}
@@ -127,11 +156,23 @@ function TopSuppliersBarChart({ rows, scopeLabel }) {
   );
 }
 
-function ExpenseDrillDownTable({ hierarchy, onOpenMifal }) {
+function ExpenseDrillDownTable({ hierarchy, onOpenEntity, activeFilters }) {
   const [openTypes, setOpenTypes] = useState({});
   const [openSuppliers, setOpenSuppliers] = useState({});
   function toggleType(key) { setOpenTypes(s => ({ ...s, [key]: !s[key] })); }
   function toggleSupplier(key) { setOpenSuppliers(s => ({ ...s, [key]: !s[key] })); }
+  // Clicking a category on the chart above filters straight to it — expand both levels (type +
+  // its suppliers) automatically instead of making the user click through two more times.
+  useEffect(() => {
+    if (!activeFilters || activeFilters.length === 0) return;
+    const newOpenTypes = {}, newOpenSuppliers = {};
+    hierarchy.forEach(t => {
+      newOpenTypes[t.key] = true;
+      t.suppliers.forEach(s => { newOpenSuppliers[`${t.key}::${s.key}`] = true; });
+    });
+    setOpenTypes(newOpenTypes);
+    setOpenSuppliers(newOpenSuppliers);
+  }, [activeFilters, hierarchy]);
   if (hierarchy.length === 0) return <div className="text-center py-10 rounded-xl" style={{ background: C.surface, border: `1px dashed ${C.line}`, color: C.inkSoft }}>אין נתוני הוצאות להצגה</div>;
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
@@ -168,7 +209,7 @@ function ExpenseDrillDownTable({ hierarchy, onOpenMifal }) {
                       {supOpen && s.transactions.map((tr, i) => (
                         <tr key={tr.id + i} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
                           <td className="px-4 py-2 text-sm" style={{ paddingRight: 58 }}>
-                            <button onClick={() => onOpenMifal(tr.mifalId)} className="hover:underline" style={{ color: C.forestDark }}>{tr.mifalName}</button>
+                            <button onClick={() => onOpenEntity(tr.ownerKind, tr.ownerId)} className="hover:underline" style={{ color: C.forestDark }}>{tr.ownerName}</button>
                             <span className="text-xs" style={{ color: C.inkSoft }}> — {tr.expense_name}</span>
                           </td>
                           <td className="px-4 py-2 text-sm" style={NUMFONT}>{money(tr.total)}</td>
@@ -204,6 +245,7 @@ export default function FinancialsPageView() {
 
   const scopedMifalim = timeScope === 'current' ? mifalim.filter(m => yearOf(m) === currentYear) : mifalim.filter(m => yearOf(m) != null);
   const scopedIds = new Set(scopedMifalim.map(m => m.id));
+  const scopedMegaProjectsForExpenses = timeScope === 'current' ? megaProjects.filter(mp => megaYearOf(mp) === currentYear) : megaProjects;
 
   const totalIncome = scopedMifalim.reduce((s, m) => s + m.totalIncome, 0);
   const totalExpectedIncome = scopedMifalim.reduce((s, m) => s + m.totalExpectedIncome, 0);
@@ -219,7 +261,7 @@ export default function FinancialsPageView() {
   function toggleMega(id) { setExpandedMega(e => ({ ...e, [id]: !e[id] })); }
   function toggleExpenseType(key) { setExpenseTypeFilters(f => (f.includes(key) ? f.filter(k => k !== key) : [...f, key])); }
 
-  const expenseRecords = useMemo(() => buildExpenseRecords(scopedMifalim), [scopedMifalim]);
+  const expenseRecords = useMemo(() => buildExpenseRecords(scopedMifalim, scopedMegaProjectsForExpenses), [scopedMifalim, scopedMegaProjectsForExpenses]);
   const expenseTypeChartData = useMemo(() => buildExpenseTypeChartData(expenseRecords), [expenseRecords]);
   const supplierChartRows = useMemo(() => buildTopSuppliersData(expenseRecords, expenseTypeFilters), [expenseRecords, expenseTypeFilters]);
   const expenseHierarchy = useMemo(() => buildExpenseHierarchy(expenseTypeFilters.length === 0 ? expenseRecords : expenseRecords.filter(r => expenseTypeFilters.includes(r.expense_type))), [expenseRecords, expenseTypeFilters]);
@@ -332,9 +374,8 @@ export default function FinancialsPageView() {
             <CrossFilterDonutChart title="הוצאות לפי סוג" unitLabel="סכום" data={expenseTypeChartData} selected={expenseTypeFilters} onToggle={toggleExpenseType} valueFormatter={money} />
             <TopSuppliersBarChart rows={supplierChartRows} scopeLabel={supplierScopeLabel} />
           </div>
-          <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>פירוט הוצאות היררכי — סוג ← ספק ← מפעל</h3>
-          <ExpenseDrillDownTable hierarchy={expenseHierarchy} onOpenMifal={onOpen} />
-          <p className="text-[11px] mt-2" style={{ color: C.inkSoft }}>תצוגה זו כוללת הוצאות ברמת המפעל בלבד (לא כולל הוצאות מאקרו ישירות של פרויקטי על, שאינן משויכות למפעל ספציפי).</p>
+          <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>פירוט הוצאות היררכי — סוג ← ספק ← מפעל / פרויקט על</h3>
+          <ExpenseDrillDownTable hierarchy={expenseHierarchy} onOpenEntity={(kind, id) => (kind === 'mega' ? onOpenMega(id) : onOpen(id))} activeFilters={expenseTypeFilters} />
         </>
       )}
     </div>

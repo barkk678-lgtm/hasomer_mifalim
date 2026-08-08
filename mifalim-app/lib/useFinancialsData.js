@@ -57,12 +57,14 @@ export function useFinancialsData() {
     });
 
     const withLinks = (megaProjectsData || []).map(mp => {
+      const myExpenses = (expenses || []).filter(r => r.owner_type === 'mega_project' && r.owner_id === mp.id);
       const ownIncome = (income || []).filter(r => r.owner_type === 'mega_project' && r.owner_id === mp.id).reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      const ownExpenses = (expenses || []).filter(r => r.owner_type === 'mega_project' && r.owner_id === mp.id).reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
+      const ownExpenses = myExpenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
       return {
         ...mp,
         linked_mifal_ids: (links || []).filter(l => l.mega_project_id === mp.id).map(l => l.mifal_id),
         ownIncome, ownExpenses,
+        expenseRows: myExpenses,
       };
     });
 
