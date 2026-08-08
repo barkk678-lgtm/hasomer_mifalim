@@ -14,7 +14,7 @@ import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
 import { usePreparations } from '../lib/usePreparations';
-import { C, ALL_TYPES, FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
+import { C, ALL_TYPES, FILE_CATEGORIES, REQUIRED_FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
 import CrossFilterDonutChart from './CrossFilterDonutChart';
 
@@ -354,7 +354,16 @@ function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categ
       className="rounded-xl transition-colors"
       style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2, background: dragActive ? C.ochreSoft : 'transparent' }}
     >
-      <Card title={`${title} (${rows.length})`}>
+      <Card title={
+        <span className="flex items-center gap-1.5">
+          {title} ({rows.length})
+          {REQUIRED_FILE_CATEGORIES.includes(title) && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: rows.length === 0 ? C.rustSoft : C.greenGoodSoft, color: rows.length === 0 ? C.rust : C.greenGood }}>
+              חובה
+            </span>
+          )}
+        </span>
+      }>
         {rows.length === 0 ? (
           <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
         ) : (

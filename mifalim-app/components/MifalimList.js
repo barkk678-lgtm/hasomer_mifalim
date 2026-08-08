@@ -3,7 +3,8 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
-import { C, ALL_TYPES, STATUS_OPTIONS, ACTIVE_STATUSES, LEAD_ROLES, AUDIENCE_ROWS, TRIP_TYPES, CAMP_TYPES, SEMINAR_TYPES } from '../lib/designSystem';
+import { useFiles } from '../lib/useFiles';
+import { C, ALL_TYPES, STATUS_OPTIONS, ACTIVE_STATUSES, LEAD_ROLES, AUDIENCE_ROWS, TRIP_TYPES, CAMP_TYPES, SEMINAR_TYPES, REQUIRED_FILE_CATEGORIES } from '../lib/designSystem';
 import { Field, TextInput, TextArea, Select, Badge, StatusBadge, IconButton, Card, Modal, ActiveScheduleToggle, AudienceBubbleSelect, MunicipalitySelect, ToggleSwitch, HeaderFilterPopover, ExportButton } from './ui';
 import CrossFilterDonutChart from './CrossFilterDonutChart';
 
@@ -89,6 +90,10 @@ export function MifalModal({ open, onClose, existing, onSave }) {
   const [step, setStep] = useState(existing ? 'form' : 'type');
   const [draft, setDraft] = useState(existing || null);
   const [saving, setSaving] = useState(false);
+  const [closeError, setCloseError] = useState('');
+  // Only fetches when editing a real mifal (existing?.id) — needed to enforce that a mifal can't
+  // be marked "הסתיים" while any required document type still has zero files.
+  const { files: existingFiles } = useFiles('mifal', existing?.id);
 
   // `existing` only reflects the row the user clicked "edit" on for as long as this component
   // instance stays mounted with the same open/existing props — since useState's initializer only
@@ -100,6 +105,7 @@ export function MifalModal({ open, onClose, existing, onSave }) {
     if (open) {
       setStep(existing ? 'form' : 'type');
       setDraft(existing || null);
+      setCloseError('');
     }
   }, [open, existing]);
 
@@ -107,6 +113,15 @@ export function MifalModal({ open, onClose, existing, onSave }) {
 
   async function handleSave() {
     if (!draft.name.trim()) return;
+    setCloseError('');
+    if (existing && draft.status === 'הסתיים') {
+      const presentCategories = new Set(existingFiles.map(f => f.category));
+      const missing = REQUIRED_FILE_CATEGORIES.filter(c => !presentCategories.has(c));
+      if (missing.length > 0) {
+        setCloseError(`לא ניתן לסגור את המפעל — חסרים המסמכים הבאים: ${missing.join(', ')}.`);
+        return;
+      }
+    }
     setSaving(true);
     await onSave(draft);
     setSaving(false);
@@ -145,7 +160,16 @@ export function MifalModal({ open, onClose, existing, onSave }) {
           })}
         </div>
       )}
-      {step === 'form' && draft && <MifalForm draft={draft} setDraft={setDraft} />}
+      {step === 'form' && draft && (
+        <>
+          {closeError && (
+            <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
+              {closeError}
+            </div>
+          )}
+          <MifalForm draft={draft} setDraft={setDraft} />
+        </>
+      )}
     </Modal>
   );
 }

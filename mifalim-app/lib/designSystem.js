@@ -32,7 +32,19 @@ export const SEMINAR_TYPES = ['סמינר פתיחת שנה', 'סמינר התע
 export const STATUS_OPTIONS = ['מתוכנן', 'בעבודה', 'ממתין להפקת לקחים', 'הסתיים', 'בוטל'];
 export const STATUS_TONE = { 'מתוכנן': 'forest', 'בעבודה': 'ochre', 'ממתין להפקת לקחים': 'amber', 'הסתיים': 'good', 'בוטל': 'rust' };
 export const ACTIVE_STATUSES = ['בעבודה', 'ממתין להפקת לקחים'];
-export const FILE_CATEGORIES = ['הדרכה', 'מנהלה', 'אישורים'];
+// Required document types must be present before a mifal can be marked "הסתיים" (see MifalModal's
+// validation in MifalimList.js). "אישור תיאום טיולים" is the one legally-required document.
+export const DOCUMENT_TYPES = [
+  { key: 'אישור תיאום טיולים', required: true },
+  { key: 'חוברת הדרכה', required: true },
+  { key: 'פלאייר', required: true },
+  { key: 'מסמך הפקת לקחים', required: true },
+  { key: 'נספח לחוברת הדרכה', required: false },
+  { key: 'הצעת מחיר', required: false },
+  { key: 'אחר', required: false },
+];
+export const FILE_CATEGORIES = DOCUMENT_TYPES.map(d => d.key);
+export const REQUIRED_FILE_CATEGORIES = DOCUMENT_TYPES.filter(d => d.required).map(d => d.key);
 export const EXPENSE_TYPES = ['מזון', 'הסעות', 'אבטחה ורפואה', 'ציוד משרדי', 'ציוד מחנאי', 'דפוס וטקסטיל', 'רכב', 'השכרת מקום'];
 
 export const HOLIDAYS = {
