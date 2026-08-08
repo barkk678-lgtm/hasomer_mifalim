@@ -684,9 +684,12 @@ export default function MifalDetailView({ mifalId }) {
 
       <div className="rounded-xl p-5 mb-5" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
         <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
-            <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {Icon && <Icon size={15} style={{ color: C.forestLight }} />}
+              <span className="text-xs font-semibold" style={{ color: C.inkSoft }}>{def.label}</span>
+            </div>
+            <MifalStatusControl mifal={mifal} onUpdateStatus={s => updateMifal({ status: s })} />
           </div>
           <div className="flex items-center gap-1">
             <IconButton icon={Pencil} title="עריכת מאפייני המפעל" onClick={() => setEditOpen(true)} />
@@ -700,7 +703,6 @@ export default function MifalDetailView({ mifalId }) {
           {!isPrep && <InfoField label="קהל יעד" value={(mifal.target_audience || []).join(', ')} />}
           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
-          <InfoField label="סטטוס" value={<MifalStatusControl mifal={mifal} onUpdateStatus={s => updateMifal({ status: s })} />} />
           {mifal.type === 'day_trip' ? (
             <>
               <InfoField label="סוג טיול" value={mifal.trip_type} />
