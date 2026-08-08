@@ -452,7 +452,13 @@ function useFloatingMenu() {
     if (!open || !btnRef.current) { setPos(null); return; }
     function computePosition() {
       const rect = btnRef.current.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right, width: Math.max(rect.width, 180) });
+      const menuHeightEstimate = 250; // matches the maxHeight (240) used by these dropdowns, plus a little padding
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // Flip upward when there isn't room below but there is above — otherwise the menu gets
+      // clipped by the viewport bottom (e.g. a row near the end of a long table).
+      const openUpward = spaceBelow < menuHeightEstimate && rect.top > spaceBelow;
+      const vertical = openUpward ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 };
+      setPos({ ...vertical, right: window.innerWidth - rect.right, width: Math.max(rect.width, 180) });
     }
     computePosition();
     window.addEventListener('scroll', computePosition, true);
@@ -482,7 +488,7 @@ function CreatableSelectCell({ value, options, placeholder, onCommit }) {
         {value || placeholder || '+ בחר ספק'}
       </button>
       {open && pos && createPortal(
-        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-2" style={{ position: 'fixed', top: pos.top, right: pos.right, width: pos.width, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-2" style={{ position: 'fixed', ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }), right: pos.right, width: pos.width, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && trimmedSearch && !exactMatch) createNew(); }} placeholder="חיפוש או הוספת ספק..." className="w-full text-xs rounded px-2 py-1.5 mb-1.5" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
           <div className="flex flex-col">
             {filtered.map(o => <button key={o} type="button" onClick={() => select(o)} className="text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>{o}</button>)}
@@ -518,7 +524,7 @@ function AiBadgeCell({ value, options, isClassifying, onCommit }) {
         )}
       </button>
       {open && pos && createPortal(
-        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', top: pos.top, right: pos.right, minWidth: 150, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }), right: pos.right, minWidth: 150, maxHeight: 240, overflowY: 'auto', zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
           <button type="button" onClick={() => { onCommit(''); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.inkSoft }}>ללא</button>
           {options.map(o => <button key={o} type="button" onClick={() => { onCommit(o); setOpen(false); }} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-black/5" style={{ color: C.ink }}>{o}</button>)}
         </div>,
@@ -638,7 +644,7 @@ export function InlineGrid({ columns, computedColumns = [], rows, makeEmptyDraft
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr style={{ background: C.forest }}>
-            {columns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
+            {columns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white" style={col.width ? { width: col.width } : undefined}>{col.label}</th>)}
             {computedColumns.map(col => <th key={col.key} className="text-right px-3 py-2 text-xs font-semibold text-white">{col.label}</th>)}
             <th className="w-10"></th>
           </tr>

@@ -36,7 +36,7 @@ function emptyIncomeDraft() { return { source_name: '', amount: '' }; }
 const EXPENSE_COLUMNS = [
   { key: 'expense_name', label: 'תיאור ההוצאה', type: 'text' },
   { key: 'supplier_name', label: 'ספק', type: 'creatable-select' },
-  { key: 'expense_type', label: 'סוג הוצאה', type: 'ai-select', options: EXPENSE_TYPES },
+  { key: 'expense_type', label: 'סוג הוצאה', type: 'ai-select', options: EXPENSE_TYPES, width: 140 },
   { key: 'quantity', label: 'כמות', type: 'number' },
   { key: 'unit_price', label: 'מחיר ליחידה', type: 'number' },
   { key: 'notes', label: 'הערות', type: 'text' },
