@@ -1,5 +1,6 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Plus, Trash2, Pencil, Tent, ArrowUpDown } from 'lucide-react';
 import { useMifalim } from '../lib/useMifalim';
@@ -80,7 +81,6 @@ export function MifalForm({ draft, setDraft }) {
         <Field label="מועד תחילת עבודה"><TextInput type="date" value={draft.work_start_date} onChange={e => set({ work_start_date: e.target.value })} /></Field>
         <Field label="מועד פעיל"><ActiveScheduleToggle value={draft.date_mode} onChange={v => set({ date_mode: v })} /></Field>
       </div>
-      <Field label="סטטוס"><Select value={draft.status} onChange={e => set({ status: e.target.value })}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</Select></Field>
       <Field label="הערות"><TextArea value={draft.comments} onChange={e => set({ comments: e.target.value })} /></Field>
     </div>
   );
@@ -90,10 +90,6 @@ export function MifalModal({ open, onClose, existing, onSave }) {
   const [step, setStep] = useState(existing ? 'form' : 'type');
   const [draft, setDraft] = useState(existing || null);
   const [saving, setSaving] = useState(false);
-  const [closeError, setCloseError] = useState('');
-  // Only fetches when editing a real mifal (existing?.id) — needed to enforce that a mifal can't
-  // be marked "הסתיים" while any required document type still has zero files.
-  const { files: existingFiles } = useFiles('mifal', existing?.id);
 
   // `existing` only reflects the row the user clicked "edit" on for as long as this component
   // instance stays mounted with the same open/existing props — since useState's initializer only
@@ -105,7 +101,6 @@ export function MifalModal({ open, onClose, existing, onSave }) {
     if (open) {
       setStep(existing ? 'form' : 'type');
       setDraft(existing || null);
-      setCloseError('');
     }
   }, [open, existing]);
 
@@ -113,15 +108,6 @@ export function MifalModal({ open, onClose, existing, onSave }) {
 
   async function handleSave() {
     if (!draft.name.trim()) return;
-    setCloseError('');
-    if (existing && draft.status === 'הסתיים') {
-      const presentCategories = new Set(existingFiles.map(f => f.category));
-      const missing = REQUIRED_FILE_CATEGORIES.filter(c => !presentCategories.has(c));
-      if (missing.length > 0) {
-        setCloseError(`לא ניתן לסגור את המפעל — חסרים המסמכים הבאים: ${missing.join(', ')}.`);
-        return;
-      }
-    }
     setSaving(true);
     await onSave(draft);
     setSaving(false);
@@ -160,17 +146,72 @@ export function MifalModal({ open, onClose, existing, onSave }) {
           })}
         </div>
       )}
-      {step === 'form' && draft && (
-        <>
-          {closeError && (
-            <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
-              {closeError}
-            </div>
-          )}
-          <MifalForm draft={draft} setDraft={setDraft} />
-        </>
-      )}
+      {step === 'form' && draft && <MifalForm draft={draft} setDraft={setDraft} />}
     </Modal>
+  );
+}
+
+// Standalone status control (a clickable StatusBadge that opens a dropdown) — pulled out of the
+// edit form since status changes far more often than the rest of a mifal's details, and now
+// carries real business logic (blocking "הסתיים" without the 4 required document types). Used
+// both from the list row and the mifal detail header. Only fetches the mifal's files once the
+// dropdown is actually opened (not on mount) — with a list of many rows, eagerly fetching files
+// for every single one just to render a badge would be a lot of wasted queries.
+export function MifalStatusControl({ mifal, onUpdateStatus }) {
+  const [open, setOpen] = useState(false);
+  const [everOpened, setEverOpened] = useState(false);
+  const [pos, setPos] = useState(null);
+  const [error, setError] = useState('');
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const { files } = useFiles('mifal', everOpened ? mifal.id : null);
+
+  useEffect(() => {
+    function h(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  function openMenu() {
+    setEverOpened(true);
+    setError('');
+    const rect = btnRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpen(true);
+  }
+
+  function select(newStatus) {
+    if (newStatus === mifal.status) { setOpen(false); return; }
+    if (newStatus === 'הסתיים') {
+      const present = new Set(files.map(f => f.category));
+      const missing = REQUIRED_FILE_CATEGORIES.filter(c => !present.has(c));
+      if (missing.length > 0) { setError(`לא ניתן לסגור — חסרים המסמכים: ${missing.join(', ')}.`); return; }
+    }
+    onUpdateStatus(newStatus);
+    setOpen(false);
+  }
+
+  return (
+    <div className="inline-block">
+      <button ref={btnRef} type="button" onClick={() => (open ? setOpen(false) : openMenu())}>
+        <StatusBadge status={mifal.status} />
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef} onClick={e => e.stopPropagation()} className="rounded-lg shadow-lg p-1.5" style={{ position: 'fixed', top: pos.top, right: pos.right, minWidth: 180, zIndex: 9999, background: C.surface, border: `1px solid ${C.line}` }}>
+          {error && <p className="text-[10px] px-2 py-1.5 mb-1 rounded" style={{ background: C.rustSoft, color: C.rust }}>{error}</p>}
+          {STATUS_OPTIONS.map(s => (
+            <button key={s} type="button" onClick={() => select(s)} className="w-full text-right px-2 py-1.5 rounded hover:bg-black/5 flex items-center">
+              <StatusBadge status={s} />
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
   );
 }
 
@@ -327,7 +368,7 @@ export default function MifalimList() {
                       <td className="px-4 py-3 text-xs" style={{ color: C.inkSoft }}>{m.lead_role || '—'}</td>
                       <td className="px-4 py-3 text-xs">{dateRangeLabel(m)}</td>
                       <td className="px-4 py-3 text-xs">{m.participants || 0}</td>
-                      <td className="px-4 py-3"><StatusBadge status={m.status} /></td>
+                      <td className="px-4 py-3"><MifalStatusControl mifal={m} onUpdateStatus={s => updateMifal(m.id, { status: s })} /></td>
                       <td className="px-4 py-3"><Badge tone={balance >= 0 ? 'good' : 'rust'}>{money(balance)}</Badge></td>
                       <td className="px-2 py-3 text-center">
                         <IconButton icon={Trash2} tone="danger" title="מחיקת מפעל" onClick={() => { if (confirm(`האם אתה בטוח שאתה רוצה למחוק את מפעל "${m.name || 'ללא שם'}"?`)) deleteMifal(m.id); }} />

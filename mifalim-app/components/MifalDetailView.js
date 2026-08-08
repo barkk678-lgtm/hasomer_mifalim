@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Bus, FileText, FileSpreadsheet, Image as ImageIcon, File as FileIcon, ChevronRight, ChevronLeft } from 'lucide-react';
-import { MifalModal, MifalForm, createEmptyDraft } from './MifalimList';
+import { MifalModal, MifalForm, createEmptyDraft, MifalStatusControl } from './MifalimList';
 import BusLogisticsTab from './BusLogisticsTab';
 import { useMifal } from '../lib/useMifal';
 import { useMifalTasks } from '../lib/useMifalTasks';
@@ -700,7 +700,7 @@ export default function MifalDetailView({ mifalId }) {
           {!isPrep && <InfoField label="קהל יעד" value={(mifal.target_audience || []).join(', ')} />}
           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />
-          <InfoField label="סטטוס" value={<StatusBadge status={mifal.status} />} />
+          <InfoField label="סטטוס" value={<MifalStatusControl mifal={mifal} onUpdateStatus={s => updateMifal({ status: s })} />} />
           {mifal.type === 'day_trip' ? (
             <>
               <InfoField label="סוג טיול" value={mifal.trip_type} />
