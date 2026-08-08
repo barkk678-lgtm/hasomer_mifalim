@@ -120,12 +120,16 @@ function buildExpenseHierarchy(records) {
 }
 
 // Manual rotate+translate (not the XAxis angle/textAnchor props) — under dir="rtl", SVG
-// text-anchor is direction-relative just like the Y-axis tick above, which was pushing these
-// labels up into the bars instead of below the axis line. A raw transform sidesteps that.
+// text-anchor is direction-relative just like the Y-axis tick above. That fix forced
+// direction:ltr to make textAnchor="end" mean visual-right — not an option here (these are
+// Hebrew supplier names; forcing ltr would reverse the character order). So instead: keep
+// direction explicitly rtl and use textAnchor="start", which is what resolves to visual-right
+// under rtl — anchoring the label's pivot at the tick instead of at its far end, which is what
+// was swinging the rotated text up into the bars instead of down away from the axis.
 function FinXAxisAngledTick({ x, y, payload }) {
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={10} textAnchor="end" transform="rotate(-25)" fill={C.inkSoft} fontSize="11px" fontFamily="Heebo, sans-serif">
+      <text x={0} y={0} dy={10} textAnchor="start" transform="rotate(-25)" fill={C.inkSoft} fontSize="11px" fontFamily="Heebo, sans-serif" style={{ direction: 'rtl' }}>
         {payload.value}
       </text>
     </g>
