@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Plus, Trash2, Pencil, ListChecks, Wallet, UserPlus, LayoutGrid, TableIcon, CalendarDays, Upload, Wrench, Download, Bus } from 'lucide-react';
@@ -14,7 +14,7 @@ import { usePricingTiers } from '../lib/usePricingTiers';
 import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
 import { usePreparations } from '../lib/usePreparations';
-import { C, ALL_TYPES, FILE_CATEGORIES, REQUIRED_FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
+import { C, ALL_TYPES, REQUIRED_FILE_CATEGORIES, GENERAL_FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
 import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
 import CrossFilterDonutChart from './CrossFilterDonutChart';
 
@@ -335,88 +335,93 @@ function OccurrencesTab({ mifal }) {
 }
 
 /* ============================== FILES TAB ============================== */
-const FILES_PAGE_SIZE = 5;
-
-function FilesSection({ title, rows, onRemove, onRecategorize, onDownload, categories, dragActive, onDragOver, onDragLeave, onDrop, page, setPage }) {
-  const pageRows = rows.slice(page * FILES_PAGE_SIZE, page * FILES_PAGE_SIZE + FILES_PAGE_SIZE);
+// One drag/click drop-zone per required document type — a quick visual "is this here yet"
+// status (red/dashed when empty, green once at least one file is tagged with it) doubling as
+// the upload target, instead of a whole separate table section per mandatory category.
+function RequiredDocSquare({ docType, files, onUpload, onDownload, onRemove }) {
+  const [dragActive, setDragActive] = useState(false);
+  const myFiles = files.filter(f => f.category === docType);
+  const has = myFiles.length > 0;
+  const toneColor = has ? C.greenGood : C.rust;
+  const toneSoft = has ? C.greenGoodSoft : C.rustSoft;
   return (
-    // The drag handlers + highlight live on this OUTER wrapper (the full card), not some inner
-    // element sized to its content — otherwise the highlighted "drop here" area shrinks down to
-    // whatever's inside (e.g. just the empty-state sentence) while the real, whole-card drop
-    // target underneath looks unmarked. dragleave also has to check relatedTarget: without that,
-    // it fires (and clears the highlight) every time the pointer crosses onto a child element
-    // inside the card, not just when it actually leaves the card — making the zone flicker/feel
-    // broken while dragging over it.
     <div
-      onDragOver={onDragOver}
-      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) onDragLeave(); }}
-      onDrop={onDrop}
-      className="rounded-xl transition-colors"
-      style={{ outline: dragActive ? `2px dashed ${C.ochre}` : 'none', outlineOffset: 2, background: dragActive ? C.ochreSoft : 'transparent' }}
+      onDragOver={e => { e.preventDefault(); setDragActive(true); }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragActive(false); }}
+      onDrop={e => { e.preventDefault(); setDragActive(false); onUpload(e.dataTransfer.files, docType); }}
+      className="rounded-xl p-3 flex flex-col transition-colors"
+      style={{ aspectRatio: '1 / 1', border: `2px ${has ? 'solid' : 'dashed'} ${dragActive ? C.ochre : toneColor}`, background: dragActive ? C.ochreSoft : toneSoft }}
     >
-      <Card title={
-        <span className="flex items-center gap-1.5">
-          {title} ({rows.length})
-          {REQUIRED_FILE_CATEGORIES.includes(title) && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: rows.length === 0 ? C.rustSoft : C.greenGoodSoft, color: rows.length === 0 ? C.rust : C.greenGood }}>
-              חובה
-            </span>
-          )}
-        </span>
-      }>
-        {rows.length === 0 ? (
-          <p className="text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו — גררו קובץ לכאן.</p>
-        ) : (
-          <>
-            <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr style={{ background: '#E3E4D6' }}>
-                    {['שם הקובץ', 'גודל', 'עודכן', 'עודכן ע"י', ...(categories.length > 1 ? ['קטגוריה'] : []), 'הורדה', ''].map(h => (
-                      <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRows.map((f, i) => (
-                    <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
-                      <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
-                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
-                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
-                      <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
-                      {categories.length > 1 && (
-                        <td className="px-3 py-2">
-                          <select value={f.category || categories[0]} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
-                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </td>
-                      )}
-                      <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
-                      <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="text-xs font-bold text-center mb-2" style={{ color: toneColor }}>{docType}</div>
+      {has ? (
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1">
+          {myFiles.map(f => (
+            <div key={f.id} className="flex items-center justify-between gap-1 text-[10px] rounded px-1.5 py-1" style={{ background: '#fff' }}>
+              <button onClick={() => onDownload(f)} className="truncate text-right flex-1 hover:underline" style={{ color: C.forestDark }} title={f.name}>{f.name}</button>
+              <button onClick={() => onRemove(f)} className="shrink-0"><Trash2 size={11} style={{ color: C.rust }} /></button>
             </div>
-            {rows.length > FILES_PAGE_SIZE && (
-              <div className="flex items-center justify-center gap-3 mt-2 text-xs">
-                <button disabled={page === 0} onClick={() => setPage(page - 1)} style={{ opacity: page === 0 ? 0.4 : 1 }}>הקודם</button>
-                <span style={{ color: C.inkSoft }}>עמוד {page + 1} מתוך {Math.ceil(rows.length / FILES_PAGE_SIZE)}</span>
-                <button disabled={(page + 1) * FILES_PAGE_SIZE >= rows.length} onClick={() => setPage(page + 1)} style={{ opacity: (page + 1) * FILES_PAGE_SIZE >= rows.length ? 0.4 : 1 }}>הבא</button>
-              </div>
-            )}
-          </>
-        )}
-      </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-[11px] text-center" style={{ color: C.rust }}>גררו קובץ לכאן</div>
+      )}
+      <label className="mt-2 text-[10px] font-semibold text-center py-1.5 rounded cursor-pointer" style={{ background: '#fff', color: C.forestDark, border: `1px solid ${C.line}` }}>
+        + הוספת קובץ
+        <input type="file" multiple className="hidden" onChange={e => { onUpload(e.target.files, docType); e.target.value = ''; }} />
+      </label>
     </div>
   );
 }
 
-function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
+// All non-mandatory files in one table, grouped by category (section header row, then its
+// files) instead of a separate card+table per category.
+function GeneralFilesTable({ files, categories, onRemove, onRecategorize, onDownload }) {
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr style={{ background: '#E3E4D6' }}>
+            {['שם הקובץ', 'קטגוריה', 'גודל', 'עודכן', 'עודכן ע"י', 'הורדה', ''].map(h => (
+              <th key={h} className="text-right px-3 py-2 text-xs font-semibold" style={{ color: C.forestDark }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {categories.map(cat => {
+            const rows = files.filter(f => f.category === cat);
+            return (
+              <Fragment key={cat}>
+                <tr style={{ background: C.steelSoft, borderTop: `1px solid ${C.line}` }}>
+                  <td colSpan={7} className="px-3 py-1.5 text-xs font-bold" style={{ color: C.forestDark }}>{cat} ({rows.length})</td>
+                </tr>
+                {rows.length === 0 ? (
+                  <tr style={{ borderTop: `1px solid ${C.line}` }}><td colSpan={7} className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>אין קבצים בקטגוריה זו.</td></tr>
+                ) : rows.map((f, i) => (
+                  <tr key={f.id} style={{ background: i % 2 ? '#FAFAF3' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-3 py-2"><button onClick={() => onDownload(f)} className="font-medium hover:underline" style={{ color: C.forestDark }}>{f.name}</button></td>
+                    <td className="px-3 py-2">
+                      <select value={f.category || cat} onChange={e => onRecategorize(f.id, e.target.value)} className="text-xs rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}` }}>
+                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{((f.size || 0) / 1024).toFixed(0)} KB</td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.modified_at ? new Date(f.modified_at).toLocaleDateString('he-IL') : ''}</td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{f.profiles?.full_name || '—'}</td>
+                    <td className="px-3 py-2"><button onClick={() => onDownload(f)}><Download size={14} style={{ color: C.forestLight }} /></button></td>
+                    <td className="px-2 py-2 text-center"><IconButton icon={Trash2} tone="danger" onClick={() => onRemove(f)} title="מחיקה" /></td>
+                  </tr>
+                ))}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FilesTab({ mifalId }) {
   const { files, loading, uploadFiles, recategorizeFile, deleteFile, getDownloadUrl, uploadError } = useFiles('mifal', mifalId);
-  const [pages, setPages] = useState({});
-  const [dragCat, setDragCat] = useState(null);
-  const isFlat = categories.length === 1;
 
   async function handleDownload(f) {
     const url = await getDownloadUrl(f);
@@ -425,55 +430,32 @@ function FilesTab({ mifalId, categories = FILE_CATEGORIES }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצי {isFlat ? 'הפרויקט' : 'המפעל'}</h3>
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
-            העלאת קובץ
-            <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, categories[0]); e.target.value = ''; }} />
-          </label>
-        </div>
-      </div>
+      <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>מסמכי חובה</h3>
       {uploadError && (
         <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
           {uploadError}
         </div>
       )}
-      {!isFlat && <p className="text-[11px] mb-4" style={{ color: C.inkSoft }}>גררו קובץ ישירות לתוך אחת הקטגוריות למטה כדי לתייג אותו אוטומטית.</p>}
+      {loading ? <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p> : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {REQUIRED_FILE_CATEGORIES.map(docType => (
+            <RequiredDocSquare key={docType} docType={docType} files={files} onUpload={uploadFiles} onDownload={handleDownload} onRemove={deleteFile} />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold" style={{ color: C.forestDark }}>קבצים נוספים</h3>
+        <label className="text-xs font-semibold px-3 py-2 rounded-lg cursor-pointer text-white" style={{ background: C.forest }}>
+          העלאת קובץ
+          <input type="file" multiple className="hidden" onChange={e => { uploadFiles(e.target.files, GENERAL_FILE_CATEGORIES[0]); e.target.value = ''; }} />
+        </label>
+      </div>
       {loading ? (
         <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>
-      ) : isFlat ? (
-        <FilesSection
-          title={categories[0]}
-          rows={files}
-          onRemove={deleteFile}
-          onRecategorize={recategorizeFile}
-          onDownload={handleDownload}
-          categories={categories}
-          dragActive={dragCat === categories[0]}
-          onDragOver={e => { e.preventDefault(); setDragCat(categories[0]); }}
-          onDragLeave={() => setDragCat(null)}
-          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, categories[0]); setDragCat(null); }}
-          page={pages[categories[0]] || 0}
-          setPage={p => setPages(x => ({ ...x, [categories[0]]: p }))}
-        />
-      ) : categories.map(cat => (
-        <FilesSection
-          key={cat}
-          title={cat}
-          rows={files.filter(f => f.category === cat)}
-          onRemove={deleteFile}
-          onRecategorize={recategorizeFile}
-          onDownload={handleDownload}
-          categories={categories}
-          dragActive={dragCat === cat}
-          onDragOver={e => { e.preventDefault(); setDragCat(cat); }}
-          onDragLeave={() => setDragCat(null)}
-          onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files, cat); setDragCat(null); }}
-          page={pages[cat] || 0}
-          setPage={p => setPages(x => ({ ...x, [cat]: p }))}
-        />
-      ))}
+      ) : (
+        <GeneralFilesTable files={files} categories={GENERAL_FILE_CATEGORIES} onRemove={deleteFile} onRecategorize={recategorizeFile} onDownload={handleDownload} />
+      )}
     </div>
   );
 }
