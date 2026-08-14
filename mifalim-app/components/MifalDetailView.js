@@ -15,7 +15,7 @@ import { useOccurrences } from '../lib/useOccurrences';
 import { useFiles } from '../lib/useFiles';
 import { usePreparations } from '../lib/usePreparations';
 import { C, ALL_TYPES, REQUIRED_FILE_CATEGORIES, GENERAL_FILE_CATEGORIES, EXPENSE_TYPES } from '../lib/designSystem';
-import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton } from './ui';
+import { InfoField, StatusBadge, TextInput, IconButton, Card, Modal, InlineGrid, ExportButton, Badge } from './ui';
 import CrossFilterDonutChart from './CrossFilterDonutChart';
 
 const UNASSIGNED = '__unassigned__';
@@ -24,6 +24,11 @@ function formatDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function money(n) {
@@ -555,12 +560,14 @@ const EXPENSE_COLUMNS = [
 ];
 function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', expense_type: '', quantity: '', unit_price: '', notes: '' }; }
 
-function BudgetTab({ mifalId }) {
+function BudgetTab({ mifalId, mifal, onTransferBalance }) {
   const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds } = useBudget('mifal', mifalId);
   const { suppliers } = useSuppliers();
   const { tiers } = usePricingTiers(mifalId);
   const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
   const [expenseTypeFilter, setExpenseTypeFilter] = useState([]);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState('');
   function toggleExpenseType(key) { setExpenseTypeFilter(f => (f.includes(key) ? f.filter(k => k !== key) : [...f, key])); }
   function expenseTypeOf(e) { return e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג'; }
   const expenseChartData = useMemo(() => {
@@ -571,9 +578,23 @@ function BudgetTab({ mifalId }) {
   const filteredExpenses = expenseTypeFilter.length === 0 ? expenses : expenses.filter(e => expenseTypeFilter.includes(expenseTypeOf(e)));
 
   const tiersIncome = tiers.reduce((s, t) => s + (Number(t.actual_participants) || 0) * (Number(t.price_per_participant) || 0), 0);
-  const totalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0) + tiersIncome;
+  const externalIncome = income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const totalIncome = externalIncome + tiersIncome;
   const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
   const balance = totalIncome - totalExpenses;
+  // transfer_mifal_balance() deliberately excludes registration/pricing-tier income (see
+  // supabase/schema/09_petty_cash_management.sql) — this is the exact figure it will transfer,
+  // shown separately from `balance` above so the confirmation isn't misleading.
+  const transferableBalance = externalIncome - totalExpenses;
+
+  async function handleTransferBalance() {
+    if (!confirm(`להעביר לניהול יתרות (קופה קטנה) יתרה של ${money(transferableBalance)} (הכנסות חיצוניות פחות הוצאות — לא כולל הכנסת הרשמה)?\n\nלא ניתן לבטל פעולה זו.`)) return;
+    setTransferring(true);
+    setTransferError('');
+    const result = await onTransferBalance();
+    setTransferring(false);
+    if (result?.error) setTransferError(result.error);
+  }
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
 
@@ -583,6 +604,22 @@ function BudgetTab({ mifalId }) {
         <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
           {budgetError}
         </div>
+      )}
+      {transferError && (
+        <div className="rounded-lg px-3 py-2 mb-3 text-xs" style={{ background: C.rustSoft, color: C.rust, border: `1px solid ${C.rust}` }}>
+          {transferError}
+        </div>
+      )}
+      {mifal.status === 'הסתיים' && !mifal.balance_transferred_at && (
+        <div className="rounded-xl p-3.5 mb-4 flex items-center justify-between flex-wrap gap-3" style={{ background: C.ochreSoft, border: `1px solid ${C.ochre}66` }}>
+          <div className="text-xs" style={{ color: '#6B4C16' }}>המפעל הסתיים — ניתן לסגור אותו כספית ולהעביר את היתרה בפועל לניהול יתרות (קופה קטנה).</div>
+          <button onClick={handleTransferBalance} disabled={transferring} className="shrink-0 px-3.5 py-2 rounded-lg text-xs font-semibold text-white" style={{ background: C.forest, opacity: transferring ? 0.6 : 1 }}>
+            {transferring ? 'מעביר...' : 'סגור מפעל והעבר יתרה'}
+          </button>
+        </div>
+      )}
+      {mifal.balance_transferred_at && (
+        <div className="mb-4"><Badge tone="good">הועבר לניהול יתרות ב-{formatDateTime(mifal.balance_transferred_at)}</Badge></div>
       )}
       <div className="flex gap-2 mb-4">
         <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.greenGoodSoft, border: `1px solid ${C.greenGood}40` }}>
@@ -647,7 +684,7 @@ function SummaryStat({ label, value, tone }) {
 
 export default function MifalDetailView({ mifalId }) {
   const router = useRouter();
-  const { mifal, loading, updateMifal, deleteMifal } = useMifal(mifalId);
+  const { mifal, loading, updateMifal, deleteMifal, transferBalance } = useMifal(mifalId);
   const { tiers } = usePricingTiers(mifalId);
   const { income, expenses } = useBudget('mifal', mifalId);
   const [tab, setTab] = useState('tasks');
@@ -765,7 +802,7 @@ export default function MifalDetailView({ mifalId }) {
       </div>
 
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
-      {tab === 'budget' && <BudgetTab mifalId={mifal.id} />}
+      {tab === 'budget' && <BudgetTab mifalId={mifal.id} mifal={mifal} onTransferBalance={transferBalance} />}
       {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
       {tab === 'buses' && <BusLogisticsTab mifalId={mifal.id} />}
       {tab === 'files' && <FilesTab mifalId={mifal.id} />}

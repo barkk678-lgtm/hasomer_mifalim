@@ -32,5 +32,15 @@ export function useMifal(id) {
     return true;
   }
 
-  return { mifal, loading, reload, updateMifal, deleteMifal };
+  // Atomically computes the mifal's actual balance and records it into petty cash — see
+  // transfer_mifal_balance() in supabase/schema/09_petty_cash_management.sql. admin/super_admin
+  // only (enforced in the function itself); raises if the mifal was already transferred.
+  async function transferBalance(note) {
+    const { data, error } = await supabase.rpc('transfer_mifal_balance', { p_mifal_id: id, p_note: note || null });
+    if (error) { console.error('שגיאה בהעברת יתרת המפעל:', error); return { error: error.message }; }
+    await reload();
+    return { balance: data, error: null };
+  }
+
+  return { mifal, loading, reload, updateMifal, deleteMifal, transferBalance };
 }

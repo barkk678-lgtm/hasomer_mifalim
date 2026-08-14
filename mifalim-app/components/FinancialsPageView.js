@@ -7,6 +7,8 @@ import { useFinancialsData } from '../lib/useFinancialsData';
 import { C, NUMFONT, ALL_TYPES } from '../lib/designSystem';
 import { Badge, StatusBadge, ToggleSwitch, ExportButton } from './ui';
 import CrossFilterDonutChart from './CrossFilterDonutChart';
+import PettyCashTab from './PettyCashTab';
+import { Wallet, BarChart3 } from 'lucide-react';
 
 const FIN_PASTEL_COLORS = ['#A9C7A2', '#E8D2A0', '#E5B3A7'];
 
@@ -238,6 +240,7 @@ export default function FinancialsPageView() {
   const onOpen = id => router.push(`/mifal/${id}`);
   const onOpenMega = id => router.push(`/mega/${id}`);
 
+  const [pageTab, setPageTab] = useState('summary'); // 'summary' | 'petty_cash'
   const [viewMode, setViewMode] = useState('by_mifal'); // 'by_mifal' | 'by_expense_type'
   const [timeScope, setTimeScope] = useState('current'); // 'current' | 'all'
   const [expandedMega, setExpandedMega] = useState({});
@@ -279,7 +282,7 @@ export default function FinancialsPageView() {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="text-2xl font-bold" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>סיכום יתרות שנתי</h1>
-        {viewMode === 'by_mifal' && scopedMifalim.length > 0 && (
+        {pageTab === 'summary' && viewMode === 'by_mifal' && scopedMifalim.length > 0 && (
           <ExportButton
             rows={scopedMifalim}
             filename="יתרות.xlsx"
@@ -288,6 +291,17 @@ export default function FinancialsPageView() {
         )}
       </div>
 
+      <div className="flex gap-1 mb-5 border-b" style={{ borderColor: C.line }}>
+        <button onClick={() => setPageTab('summary')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={pageTab === 'summary' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+          <BarChart3 size={14} /> סיכום שנתי
+        </button>
+        <button onClick={() => setPageTab('petty_cash')} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold -mb-px" style={pageTab === 'petty_cash' ? { color: C.forestDark, borderBottom: `2px solid ${C.ochre}` } : { color: C.inkSoft, borderBottom: '2px solid transparent' }}>
+          <Wallet size={14} /> ניהול יתרות
+        </button>
+      </div>
+
+      {pageTab === 'petty_cash' ? <PettyCashTab /> : (
+      <>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <ToggleSwitch value={viewMode} onChange={setViewMode} rightValue="by_mifal" rightLabel="לפי מפעלים" leftValue="by_expense_type" leftLabel="לפי סוגי הוצאות" />
         <ToggleSwitch value={timeScope} onChange={setTimeScope} rightValue="current" rightLabel="שנה נוכחית" leftValue="all" leftLabel="מכל השנים" />
@@ -381,6 +395,8 @@ export default function FinancialsPageView() {
           <h3 className="text-sm font-bold mb-3" style={{ color: C.forestDark }}>פירוט הוצאות היררכי — סוג ← ספק ← מפעל / פרויקט על</h3>
           <ExpenseDrillDownTable hierarchy={expenseHierarchy} onOpenEntity={(kind, id) => (kind === 'mega' ? onOpenMega(id) : onOpen(id))} activeFilters={expenseTypeFilters} />
         </>
+      )}
+      </>
       )}
     </div>
   );
