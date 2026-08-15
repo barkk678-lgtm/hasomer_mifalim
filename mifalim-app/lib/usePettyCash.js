@@ -10,17 +10,15 @@ function withSupplierName(row) { return { ...row, supplier_name: row.suppliers?.
 // safe going back in too: Postgres accepts a bare date string as a timestamptz literal (midnight).
 function withDateOnly(row) { return { ...row, occurred_at: row.occurred_at ? row.occurred_at.slice(0, 10) : row.occurred_at }; }
 
-// "ניהול יתרות" (petty cash) — income/expenses with owner_type='general' (no mifal/mega-project
+// "ניהול יתרות" (petty cash) — direct expenses with owner_type='general' (no mifal/mega-project
 // owner, owner_id is NULL — see supabase/schema/09_petty_cash_management.sql), plus the read-only
 // history of balances transferred in from mifalim that have financially closed
 // (mifal_balance_transfers, written only by the transfer_mifal_balance() RPC via useMifal).
-// CRUD shape mirrors useBudget.js exactly; the only structural difference is owner_type/owner_id
-// being fixed to 'general'/null instead of taking an ownerType/ownerId pair, and every row here
-// carries its own occurred_at (general rows have no owner with an implicit event date).
+// There's no direct-income concept here — the petty cash only ever receives money via mifal
+// balance transfers, so external_income is never queried/written with owner_type='general'.
 export function usePettyCash() {
   const supabase = createClient();
   const [transfers, setTransfers] = useState([]);
-  const [income, setIncome] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pettyCashError, setPettyCashError] = useState('');
@@ -31,43 +29,18 @@ export function usePettyCash() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const [{ data: tr, error: e1 }, { data: inc, error: e2 }, { data: exp, error: e3 }] = await Promise.all([
+    const [{ data: tr, error: e1 }, { data: exp, error: e2 }] = await Promise.all([
       supabase.from('mifal_balance_transfers').select('*, mifalim(name)').order('transferred_at', { ascending: true }),
-      supabase.from('external_income').select('*').eq('owner_type', 'general').order('occurred_at', { ascending: true }),
       supabase.from('expenses').select(EXPENSE_SELECT).eq('owner_type', 'general').order('occurred_at', { ascending: true }),
     ]);
     if (e1) console.error('שגיאה בטעינת העברות יתרה:', e1);
-    if (e2) console.error('שגיאה בטעינת הכנסות קופה קטנה:', e2);
-    if (e3) console.error('שגיאה בטעינת הוצאות קופה קטנה:', e3);
+    if (e2) console.error('שגיאה בטעינת הוצאות קופה קטנה:', e2);
     setTransfers(tr || []);
-    setIncome((inc || []).map(withDateOnly));
     setExpenses((exp || []).map(row => withDateOnly(withSupplierName(row))));
     setLoading(false);
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
-
-  async function addIncome(row) {
-    setPettyCashError('');
-    const { data, error } = await supabase.from('external_income').insert({ ...row, owner_type: 'general', owner_id: null }).select().single();
-    if (error) { console.error('שגיאה בהוספת הכנסה:', error); setPettyCashError(`שגיאה בהוספת הכנסה: ${error.message}`); return null; }
-    const withDate = withDateOnly(data);
-    setIncome(prev => [...prev, withDate]);
-    return withDate;
-  }
-  async function updateIncome(id, patch) {
-    setPettyCashError('');
-    const { data, error } = await supabase.from('external_income').update(patch).eq('id', id).select().single();
-    if (error) { console.error('שגיאה בעדכון הכנסה:', error); setPettyCashError(`שגיאה בעדכון הכנסה: ${error.message}`); return null; }
-    const withDate = withDateOnly(data);
-    setIncome(prev => prev.map(r => (r.id === id ? withDate : r)));
-    return withDate;
-  }
-  async function deleteIncome(id) {
-    const { error } = await supabase.from('external_income').delete().eq('id', id);
-    if (error) { console.error('שגיאה במחיקת הכנסה:', error); setPettyCashError(`שגיאה במחיקת הכנסה: ${error.message}`); return; }
-    setIncome(prev => prev.filter(r => r.id !== id));
-  }
 
   async function resolveSupplierId(name) {
     const trimmed = (name || '').trim();
@@ -141,13 +114,12 @@ export function usePettyCash() {
   }
 
   const transfersTotal = transfers.reduce((s, t) => s + (Number(t.amount) || 0), 0);
-  const incomeTotal = income.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const expensesTotal = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
-  const totalBalance = transfersTotal + incomeTotal - expensesTotal;
+  const totalBalance = transfersTotal - expensesTotal;
 
   return {
-    transfers, income, expenses, loading, totalBalance, transfersTotal, incomeTotal, expensesTotal,
-    addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense,
+    transfers, expenses, loading, totalBalance, transfersTotal, expensesTotal,
+    addExpense, updateExpense, deleteExpense,
     pettyCashError, classifyingIds, reload,
   };
 }

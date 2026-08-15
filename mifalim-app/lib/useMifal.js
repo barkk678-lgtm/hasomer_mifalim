@@ -42,5 +42,15 @@ export function useMifal(id) {
     return { balance: data, error: null };
   }
 
-  return { mifal, loading, reload, updateMifal, deleteMifal, transferBalance };
+  // Deletes the mifal's recorded balance transfer(s) and unlocks the budget for editing again —
+  // see reopen_mifal_balance() in supabase/schema/09_petty_cash_management.sql. admin/super_admin
+  // only. Re-closing afterward recomputes the full balance fresh (not a delta correction).
+  async function reopenBalance() {
+    const { error } = await supabase.rpc('reopen_mifal_balance', { p_mifal_id: id });
+    if (error) { console.error('שגיאה בפתיחה מחדש של יתרת המפעל:', error); return { error: error.message }; }
+    await reload();
+    return { error: null };
+  }
+
+  return { mifal, loading, reload, updateMifal, deleteMifal, transferBalance, reopenBalance };
 }

@@ -560,7 +560,7 @@ const EXPENSE_COLUMNS = [
 ];
 function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', expense_type: '', quantity: '', unit_price: '', notes: '' }; }
 
-function BudgetTab({ mifalId, mifal, onTransferBalance }) {
+function BudgetTab({ mifalId, mifal, onTransferBalance, onReopenBalance }) {
   const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds } = useBudget('mifal', mifalId);
   const { suppliers } = useSuppliers();
   const { tiers } = usePricingTiers(mifalId);
@@ -568,6 +568,7 @@ function BudgetTab({ mifalId, mifal, onTransferBalance }) {
   const [expenseTypeFilter, setExpenseTypeFilter] = useState([]);
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
+  const [reopening, setReopening] = useState(false);
   function toggleExpenseType(key) { setExpenseTypeFilter(f => (f.includes(key) ? f.filter(k => k !== key) : [...f, key])); }
   function expenseTypeOf(e) { return e.expense_type && e.expense_type.trim() ? e.expense_type : 'לא מסווג'; }
   const expenseChartData = useMemo(() => {
@@ -589,6 +590,15 @@ function BudgetTab({ mifalId, mifal, onTransferBalance }) {
     setTransferError('');
     const result = await onTransferBalance();
     setTransferring(false);
+    if (result?.error) setTransferError(result.error);
+  }
+
+  async function handleReopenBalance() {
+    if (!confirm('לפתוח מחדש את התקציב של המפעל? הפעולה תמחק את ההעברה שנרשמה בניהול יתרות ותאפשר לערוך את התקציב מחדש. בסגירה חוזרת תיווצר העברה חדשה עם היתרה המעודכנת.')) return;
+    setReopening(true);
+    setTransferError('');
+    const result = await onReopenBalance();
+    setReopening(false);
     if (result?.error) setTransferError(result.error);
   }
 
@@ -615,7 +625,12 @@ function BudgetTab({ mifalId, mifal, onTransferBalance }) {
         </div>
       )}
       {mifal.balance_transferred_at && (
-        <div className="mb-4"><Badge tone="good">הועבר לניהול יתרות ב-{formatDateTime(mifal.balance_transferred_at)}</Badge></div>
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <Badge tone="good">הועבר לניהול יתרות ב-{formatDateTime(mifal.balance_transferred_at)}</Badge>
+          <button onClick={handleReopenBalance} disabled={reopening} className="text-xs font-semibold underline" style={{ color: C.linkBlue, opacity: reopening ? 0.6 : 1 }}>
+            {reopening ? 'פותח מחדש...' : 'פתח מחדש'}
+          </button>
+        </div>
       )}
       <div className="flex gap-2 mb-4">
         <div className="flex-1 rounded-xl p-3.5 text-center" style={{ background: C.greenGoodSoft, border: `1px solid ${C.greenGood}40` }}>
@@ -680,7 +695,7 @@ function SummaryStat({ label, value, tone }) {
 
 export default function MifalDetailView({ mifalId }) {
   const router = useRouter();
-  const { mifal, loading, updateMifal, deleteMifal, transferBalance } = useMifal(mifalId);
+  const { mifal, loading, updateMifal, deleteMifal, transferBalance, reopenBalance } = useMifal(mifalId);
   const { tiers } = usePricingTiers(mifalId);
   const { income, expenses } = useBudget('mifal', mifalId);
   const [tab, setTab] = useState('tasks');
@@ -798,7 +813,7 @@ export default function MifalDetailView({ mifalId }) {
       </div>
 
       {tab === 'tasks' && <TasksTab mifalId={mifal.id} />}
-      {tab === 'budget' && <BudgetTab mifalId={mifal.id} mifal={mifal} onTransferBalance={transferBalance} />}
+      {tab === 'budget' && <BudgetTab mifalId={mifal.id} mifal={mifal} onTransferBalance={transferBalance} onReopenBalance={reopenBalance} />}
       {tab === 'occurrences' && !isPrep && <OccurrencesTab mifal={mifal} />}
       {tab === 'buses' && <BusLogisticsTab mifalId={mifal.id} />}
       {tab === 'files' && <FilesTab mifalId={mifal.id} />}

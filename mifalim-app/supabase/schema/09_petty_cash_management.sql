@@ -1,6 +1,8 @@
--- "ניהול יתרות" (petty cash) — a place to record income/expenses that don't belong to any
+-- "ניהול יתרות" (petty cash) — a place to record direct expenses that don't belong to any
 -- specific mifal/mega-project, plus a record of balances transferred in from mifalim that have
--- financially closed. Applied directly to the live project via the Supabase MCP connector —
+-- financially closed (the only way money enters petty cash — there's no direct-income concept;
+-- external_income/owner_type='general' was added below for symmetry but the app never uses it).
+-- Applied directly to the live project via the Supabase MCP connector —
 -- this file documents what was run, per the numbered-schema-file convention; do not re-run it
 -- as-is against a database that already has these objects (most statements are idempotent via
 -- `if not exists` / `add value if not exists` where Postgres supports it, but the enum-value
@@ -110,5 +112,30 @@ begin
   update mifalim set balance_transferred_at = now() where id = p_mifal_id;
 
   return v_balance;
+end;
+$$;
+
+-- ============================================================================
+-- 6. reopen_mifal_balance() — undoes a transfer: deletes the mifal's balance_transfers row(s)
+--    and clears balance_transferred_at so its budget can be edited again. admin/super_admin
+--    only. Deliberately NOT a delta/correction transfer (append a second row alongside the
+--    first) — it fully removes the prior transfer so a subsequent close recomputes and records
+--    the balance fresh, with no risk of double-counting the same mifal twice in the petty cash
+--    total. Added live via migration add_reopen_mifal_balance (this one is genuinely new, unlike
+--    sections 1-5 above which only document changes already applied).
+-- ============================================================================
+create or replace function reopen_mifal_balance(p_mifal_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+begin
+  if not is_admin_or_super() then
+    raise exception 'not authorized';
+  end if;
+
+  delete from mifal_balance_transfers where mifal_id = p_mifal_id;
+  update mifalim set balance_transferred_at = null where id = p_mifal_id;
 end;
 $$;
