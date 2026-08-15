@@ -69,10 +69,14 @@ alter table mifalim add column if not exists balance_transferred_at timestamptz;
 -- 5. transfer_mifal_balance() — atomically compute a mifal's actual balance, record it as a
 --    transfer, and lock the mifal. admin/super_admin only; raises if already transferred.
 --
---    IMPORTANT: this balance is external_income minus expenses ONLY — it deliberately does NOT
---    include pricing-tier/registration income (participants × price), unlike the "יתרה בפועל"
---    shown elsewhere in the app (mifal header, BudgetTab, annual financials). The UI must not
---    assume these two figures match when building a transfer confirmation.
+--    Balance = external_income + pricing-tier/registration income (actual_participants × price)
+--    minus expenses — this MUST match the "יתרה בפועל" shown elsewhere in the app (mifal header,
+--    BudgetTab, annual financials), or a transfer silently records the wrong number. The first
+--    version of this function omitted pricing-tier income entirely, which — for any mifal whose
+--    income comes mainly from registration rather than the "הכנסות נוספות" table (the normal
+--    case) — collapsed the transferred amount to just -expenses. Fixed live via migration
+--    fix_transfer_mifal_balance_include_tiers_income; the one bad transfer already recorded
+--    (the תשפ'ז seminar) was corrected by hand to the true balance.
 -- ============================================================================
 create or replace function transfer_mifal_balance(p_mifal_id uuid, p_note text default null)
 returns numeric
@@ -96,6 +100,7 @@ begin
 
   select
     coalesce((select sum(amount) from external_income where owner_type = 'mifal' and owner_id = p_mifal_id), 0)
+    + coalesce((select sum(actual_participants * price_per_participant) from pricing_tiers where mifal_id = p_mifal_id), 0)
     - coalesce((select sum(coalesce(quantity, 0) * coalesce(unit_price, 0)) from expenses where owner_type = 'mifal' and owner_id = p_mifal_id), 0)
   into v_balance;
 

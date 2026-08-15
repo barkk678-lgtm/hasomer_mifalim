@@ -582,13 +582,9 @@ function BudgetTab({ mifalId, mifal, onTransferBalance }) {
   const totalIncome = externalIncome + tiersIncome;
   const totalExpenses = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
   const balance = totalIncome - totalExpenses;
-  // transfer_mifal_balance() deliberately excludes registration/pricing-tier income (see
-  // supabase/schema/09_petty_cash_management.sql) — this is the exact figure it will transfer,
-  // shown separately from `balance` above so the confirmation isn't misleading.
-  const transferableBalance = externalIncome - totalExpenses;
 
   async function handleTransferBalance() {
-    if (!confirm(`להעביר לניהול יתרות (קופה קטנה) יתרה של ${money(transferableBalance)} (הכנסות חיצוניות פחות הוצאות — לא כולל הכנסת הרשמה)?\n\nלא ניתן לבטל פעולה זו.`)) return;
+    if (!confirm(`להעביר לניהול יתרות (קופה קטנה) יתרה של ${money(balance)}?\n\nלא ניתן לבטל פעולה זו.`)) return;
     setTransferring(true);
     setTransferError('');
     const result = await onTransferBalance();
