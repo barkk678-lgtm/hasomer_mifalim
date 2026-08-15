@@ -116,14 +116,19 @@ end;
 $$;
 
 -- ============================================================================
--- 6. reopen_mifal_balance() — undoes a transfer: deletes the mifal's balance_transfers row(s)
---    and clears balance_transferred_at so its budget can be edited again. admin/super_admin
---    only. Deliberately NOT a delta/correction transfer (append a second row alongside the
---    first) — it fully removes the prior transfer so a subsequent close recomputes and records
---    the balance fresh, with no risk of double-counting the same mifal twice in the petty cash
---    total. Added live via migration add_reopen_mifal_balance (this one is genuinely new, unlike
---    sections 1-5 above which only document changes already applied).
+-- 6. mifal_balance_transfers.is_current + reopen_mifal_balance() (soft undo) — reopening a
+--    transferred mifal must NOT delete the transfer row (the user explicitly wants it kept as
+--    history), so instead it's marked is_current=false and simply excluded from the petty cash
+--    total (see usePettyCash.js). A subsequent close inserts a brand-new row (is_current=true by
+--    default) rather than editing the old one — full audit trail, no double-counting since a
+--    mifal can only have balance_transferred_at set (i.e. be eligible to reopen) while it has
+--    at most one current transfer. admin/super_admin only. Added live via migration
+--    mifal_balance_transfers_is_current_and_soft_reopen (this one, and the is_current column, are
+--    genuinely new — unlike sections 1-5 above which only document changes already applied). This
+--    replaces an earlier version of reopen_mifal_balance() that deleted the row outright.
 -- ============================================================================
+alter table mifal_balance_transfers add column if not exists is_current boolean not null default true;
+
 create or replace function reopen_mifal_balance(p_mifal_id uuid)
 returns void
 language plpgsql
@@ -135,7 +140,7 @@ begin
     raise exception 'not authorized';
   end if;
 
-  delete from mifal_balance_transfers where mifal_id = p_mifal_id;
+  update mifal_balance_transfers set is_current = false where mifal_id = p_mifal_id and is_current = true;
   update mifalim set balance_transferred_at = null where id = p_mifal_id;
 end;
 $$;

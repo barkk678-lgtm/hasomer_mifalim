@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import { usePettyCash } from '../lib/usePettyCash';
 import { useSuppliers } from '../lib/useSuppliers';
-import { C, EXPENSE_TYPES } from '../lib/designSystem';
+import { C, EXPENSE_TYPES, ALL_TYPES } from '../lib/designSystem';
 import { Card, Badge, InlineGrid } from './ui';
 
 function money(n) { return (Number(n) || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪'; }
@@ -28,29 +28,17 @@ function PCYAxisTick({ x, y, payload }) {
   );
 }
 
-// Same RTL angled-tick fix as FinXAxisAngledTick in FinancialsPageView.js — keep direction
-// explicitly rtl (these are Hebrew mifal names) and anchor at "start", which resolves to
-// visual-right under rtl (the same geometry "end" gives under ltr).
-function PCXAxisAngledTick({ x, y, payload }) {
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={10} textAnchor="start" transform="rotate(-25)" fill={C.inkSoft} fontSize="11px" fontFamily="Heebo, sans-serif" style={{ direction: 'rtl' }}>
-        {payload.value}
-      </text>
-    </g>
-  );
-}
-
-// One bar per mifal that has transferred a balance in (summed, in case a mifal is ever reopened
-// and re-closed more than once) — shows how much each mifal actually contributed, positive or
-// negative (a mifal that closed in deficit draws the petty cash balance down).
-function buildMifalBarData(transfers) {
+// One bar per mifal TYPE (day-trip / multi-day / seminar / preparation) — simpler and more
+// stable than one bar per individual mifal, and only counts CURRENT transfers (a reopened mifal's
+// superseded transfer shouldn't count toward what its type "contributed"). Fixed category order
+// (ALL_TYPES' own order), only types that actually have a transfer are shown.
+function buildTypeBarData(transfers) {
   const totals = {};
-  transfers.forEach(t => {
-    const name = t.mifalim?.name || 'מפעל שנמחק';
-    totals[name] = (totals[name] || 0) + (Number(t.amount) || 0);
+  transfers.filter(t => t.is_current).forEach(t => {
+    const typeKey = t.mifalim?.type;
+    totals[typeKey] = (totals[typeKey] || 0) + (Number(t.amount) || 0);
   });
-  return Object.entries(totals).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  return Object.keys(ALL_TYPES).filter(k => totals[k] !== undefined).map(k => ({ name: ALL_TYPES[k].label, value: totals[k] }));
 }
 
 const EXPENSE_COLUMNS = [
@@ -67,13 +55,16 @@ function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', exp
 export default function PettyCashTab() {
   const router = useRouter();
   const {
-    transfers, expenses, loading, totalBalance, transfersTotal, expensesTotal,
+    transfers, pendingMifalim, expenses, loading, totalBalance, transfersTotal, expensesTotal,
     addExpense, updateExpense, deleteExpense, pettyCashError, classifyingIds,
   } = usePettyCash();
   const { suppliers } = useSuppliers();
   const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
 
-  const barData = useMemo(() => buildMifalBarData(transfers), [transfers]);
+  const barData = useMemo(() => buildTypeBarData(transfers), [transfers]);
+  // A single bar (or two) stretched across a full-width ResponsiveContainer looks broken —
+  // cap the chart's width to roughly what the bars actually need, capped between a sane min/max.
+  const chartWidth = Math.max(240, Math.min(620, barData.length * 170));
 
   if (loading) return <p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p>;
 
@@ -101,22 +92,24 @@ export default function PettyCashTab() {
       </div>
 
       <div className="rounded-2xl p-5 mb-5" style={{ background: '#fff', border: `1px solid ${C.line}`, boxShadow: '0 1px 3px rgba(20,30,15,0.06), 0 1px 2px rgba(20,30,15,0.04)' }}>
-        <h4 className="text-sm font-bold mb-1" style={{ color: C.forestDark, fontFamily: 'Rubik, sans-serif' }}>יתרות שהועברו לפי מפעל</h4>
-        <p className="text-[11px] mb-3" style={{ color: C.inkSoft }}>כמה כסף כל מפעל שנסגר תרם ליתרת הקופה הקטנה</p>
+        <h4 className="text-sm font-bold mb-1" style={{ color: C.forestDark, fontFamily: 'Rubik, sans-serif' }}>יתרות שהועברו לפי סוג מפעל</h4>
+        <p className="text-[11px] mb-3" style={{ color: C.inkSoft }}>כמה כסף כל סוג מפעל תרם ליתרת הקופה הקטנה</p>
         {barData.length === 0 ? (
-          <div className="flex items-center justify-center text-sm rounded-xl" style={{ height: 220, color: C.inkSoft, background: C.paper }}>עדיין לא הועברו יתרות מסגירת מפעלים</div>
+          <div className="flex items-center justify-center text-sm rounded-xl" style={{ height: 200, color: C.inkSoft, background: C.paper }}>עדיין לא הועברו יתרות מסגירת מפעלים</div>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={barData} margin={{ bottom: barData.length > 4 ? 55 : 25, top: 20, left: 15, right: 10 }}>
-              <CartesianGrid vertical={false} stroke={C.line} strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={barData.length > 4 ? <PCXAxisAngledTick /> : { fontSize: 11, fontFamily: 'Heebo', fill: C.inkSoft }} interval={0} height={barData.length > 4 ? 55 : 30} />
-              <YAxis width={85} tick={<PCYAxisTick />} axisLine={{ stroke: C.line }} tickLine={false} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={350} animationEasing="ease-out">
-                {barData.map((r, i) => <Cell key={i} fill={r.value >= 0 ? C.greenGood : C.rust} />)}
-                <LabelList dataKey="value" position="top" formatter={v => money(v)} style={{ fontFamily: 'Heebo', fontWeight: 700, fontSize: 11, fill: C.forestDark }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ maxWidth: chartWidth, margin: '0 auto' }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barData} margin={{ top: 20, left: 15, right: 10, bottom: 10 }}>
+                <CartesianGrid vertical={false} stroke={C.line} strokeDasharray="3 3" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Heebo', fill: C.inkSoft }} interval={0} />
+                <YAxis width={85} tick={<PCYAxisTick />} axisLine={{ stroke: C.line }} tickLine={false} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={350} animationEasing="ease-out" maxBarSize={80}>
+                  {barData.map((r, i) => <Cell key={i} fill={r.value >= 0 ? C.greenGood : C.rust} />)}
+                  <LabelList dataKey="value" position="top" formatter={v => money(v)} style={{ fontFamily: 'Heebo', fontWeight: 700, fontSize: 11, fill: C.forestDark }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
@@ -134,22 +127,31 @@ export default function PettyCashTab() {
       </Card>
 
       <Card title="העברות מסגירת מפעלים">
-        {transfers.length === 0 ? (
-          <div className="text-center py-8 rounded-xl" style={{ background: C.paper, color: C.inkSoft }}>עדיין לא הועברו יתרות מסגירת מפעלים</div>
+        {transfers.length === 0 && pendingMifalim.length === 0 ? (
+          <div className="text-center py-8 rounded-xl" style={{ background: C.paper, color: C.inkSoft }}>אין עדיין מפעלים שהסתיימו</div>
         ) : (
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ background: C.forest }}>
-                  {['מפעל', 'סכום', 'תאריך סגירת יתרות המפעל'].map(h => <th key={h} className="text-right px-3 py-2 text-xs font-semibold text-white">{h}</th>)}
+                  {['מפעל', 'סכום', 'תאריך סגירת יתרות המפעל', 'יתרה עדכנית?'].map(h => <th key={h} className="text-right px-3 py-2 text-xs font-semibold text-white">{h}</th>)}
                 </tr>
               </thead>
               <tbody>
+                {pendingMifalim.map((m, i) => (
+                  <tr key={`pending-${m.id}`} style={{ background: i % 2 ? '#F7F6EE' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-3 py-2"><button onClick={() => router.push(`/mifal/${m.id}`)} className="hover:underline font-semibold" style={{ color: C.forestDark }}>{m.name}</button></td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>—</td>
+                    <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>—</td>
+                    <td className="px-3 py-2"><Badge tone="amber">ממתין</Badge></td>
+                  </tr>
+                ))}
                 {[...transfers].reverse().map((t, i) => (
-                  <tr key={t.id} style={{ background: i % 2 ? '#F7F6EE' : C.surface, borderTop: `1px solid ${C.line}` }}>
+                  <tr key={t.id} style={{ background: (i + pendingMifalim.length) % 2 ? '#F7F6EE' : C.surface, borderTop: `1px solid ${C.line}` }}>
                     <td className="px-3 py-2"><button onClick={() => router.push(`/mifal/${t.mifal_id}`)} className="hover:underline font-semibold" style={{ color: C.forestDark }}>{t.mifalim?.name || 'מפעל שנמחק'}</button></td>
                     <td className="px-3 py-2"><Badge tone={Number(t.amount) >= 0 ? 'good' : 'rust'}>{money(t.amount)}</Badge></td>
                     <td className="px-3 py-2 text-xs">{formatDate(t.transferred_at)}</td>
+                    <td className="px-3 py-2"><Badge tone={t.is_current ? 'good' : 'rust'}>{t.is_current ? 'כן' : 'לא'}</Badge></td>
                   </tr>
                 ))}
               </tbody>

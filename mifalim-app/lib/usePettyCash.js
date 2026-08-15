@@ -19,6 +19,7 @@ function withDateOnly(row) { return { ...row, occurred_at: row.occurred_at ? row
 export function usePettyCash() {
   const supabase = createClient();
   const [transfers, setTransfers] = useState([]);
+  const [pendingMifalim, setPendingMifalim] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pettyCashError, setPettyCashError] = useState('');
@@ -29,13 +30,18 @@ export function usePettyCash() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const [{ data: tr, error: e1 }, { data: exp, error: e2 }] = await Promise.all([
-      supabase.from('mifal_balance_transfers').select('*, mifalim(name)').order('transferred_at', { ascending: true }),
+    const [{ data: tr, error: e1 }, { data: exp, error: e2 }, { data: pending, error: e3 }] = await Promise.all([
+      supabase.from('mifal_balance_transfers').select('*, mifalim(name, type)').order('transferred_at', { ascending: true }),
       supabase.from('expenses').select(EXPENSE_SELECT).eq('owner_type', 'general').order('occurred_at', { ascending: true }),
+      // Finished mifalim that were never closed financially — surfaced in the transfers table as
+      // "ממתין" rows so nobody forgets to close them out.
+      supabase.from('mifalim').select('id, name').eq('status', 'הסתיים').is('balance_transferred_at', null),
     ]);
     if (e1) console.error('שגיאה בטעינת העברות יתרה:', e1);
     if (e2) console.error('שגיאה בטעינת הוצאות קופה קטנה:', e2);
+    if (e3) console.error('שגיאה בטעינת מפעלים ממתינים:', e3);
     setTransfers(tr || []);
+    setPendingMifalim(pending || []);
     setExpenses((exp || []).map(row => withDateOnly(withSupplierName(row))));
     setLoading(false);
   }, []);
@@ -113,12 +119,14 @@ export function usePettyCash() {
     setExpenses(prev => prev.filter(r => r.id !== id));
   }
 
-  const transfersTotal = transfers.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  // A reopened mifal's superseded transfer (is_current=false) stays in the table for history but
+  // must NOT count toward the live balance — only the current transfer per mifal does.
+  const transfersTotal = transfers.filter(t => t.is_current).reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const expensesTotal = expenses.reduce((s, r) => s + (Number(r.quantity) || 0) * (Number(r.unit_price) || 0), 0);
   const totalBalance = transfersTotal - expensesTotal;
 
   return {
-    transfers, expenses, loading, totalBalance, transfersTotal, expensesTotal,
+    transfers, pendingMifalim, expenses, loading, totalBalance, transfersTotal, expensesTotal,
     addExpense, updateExpense, deleteExpense,
     pettyCashError, classifyingIds, reload,
   };

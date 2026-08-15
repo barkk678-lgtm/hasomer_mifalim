@@ -521,9 +521,10 @@ const TIER_COLUMNS = [
 ];
 function emptyTierDraft() { return { age_group: '', price_per_participant: '', expected_participants: '', actual_participants: '' }; }
 
-function PricingTiersSection({ mifalId }) {
-  const { tiers, loading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
-
+// tiers/loading/CRUD are lifted to BudgetTab and passed in as props (not fetched here via its
+// own usePricingTiers instance) — BudgetTab's top summary reads the very same `tiers` state, so
+// adding a row here updates it immediately instead of only after a manual refresh.
+function PricingTiersSection({ tiers, loading, createTier, updateTier, deleteTier }) {
   if (loading) return <Card title="הכנסה מהרשמה (רמות תמחור)"><p className="text-sm" style={{ color: C.inkSoft }}>טוען...</p></Card>;
 
   return (
@@ -563,7 +564,7 @@ function emptyExpenseDraft() { return { expense_name: '', supplier_name: '', exp
 function BudgetTab({ mifalId, mifal, onTransferBalance, onReopenBalance }) {
   const { income, expenses, loading, addIncome, updateIncome, deleteIncome, addExpense, updateExpense, deleteExpense, budgetError, classifyingIds } = useBudget('mifal', mifalId);
   const { suppliers } = useSuppliers();
-  const { tiers } = usePricingTiers(mifalId);
+  const { tiers, loading: tiersLoading, createTier, updateTier, deleteTier } = usePricingTiers(mifalId);
   const expenseColumns = EXPENSE_COLUMNS.map(c => (c.key === 'supplier_name' ? { ...c, options: suppliers } : c));
   const [expenseTypeFilter, setExpenseTypeFilter] = useState([]);
   const [transferring, setTransferring] = useState(false);
@@ -594,7 +595,7 @@ function BudgetTab({ mifalId, mifal, onTransferBalance, onReopenBalance }) {
   }
 
   async function handleReopenBalance() {
-    if (!confirm('לפתוח מחדש את התקציב של המפעל? הפעולה תמחק את ההעברה שנרשמה בניהול יתרות ותאפשר לערוך את התקציב מחדש. בסגירה חוזרת תיווצר העברה חדשה עם היתרה המעודכנת.')) return;
+    if (!confirm('לפתוח מחדש את התקציב של המפעל? ההעברה הקיימת בניהול יתרות תסומן כלא-עדכנית (אך תישאר בהיסטוריה), והתקציב ייפתח לעריכה. בסגירה חוזרת תיווצר העברה חדשה עם היתרה המעודכנת.')) return;
     setReopening(true);
     setTransferError('');
     const result = await onReopenBalance();
@@ -647,7 +648,7 @@ function BudgetTab({ mifalId, mifal, onTransferBalance, onReopenBalance }) {
         </div>
       </div>
 
-      <PricingTiersSection mifalId={mifalId} />
+      <PricingTiersSection tiers={tiers} loading={tiersLoading} createTier={createTier} updateTier={updateTier} deleteTier={deleteTier} />
 
       <Card title="הכנסות נוספות">
         <InlineGrid
