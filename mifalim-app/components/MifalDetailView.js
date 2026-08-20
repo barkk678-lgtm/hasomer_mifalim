@@ -748,7 +748,7 @@ export default function MifalDetailView({ mifalId }) {
         <h1 className="text-xl font-bold mb-4" style={{ fontFamily: 'Rubik, sans-serif', color: C.forestDark }}>{mifal.name || 'מפעל ללא שם'}</h1>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-3">
           <InfoField label="בעל תפקיד אחראי" value={mifal.lead_role} />
-          <InfoField label="רשויות" value={(mifal.target_municipalities || []).join(', ')} />
+          <InfoField label="מושבים" value={(mifal.target_municipalities || []).join(', ')} />
           {!isPrep && <InfoField label="קהל יעד" value={(mifal.target_audience || []).join(', ')} />}
           <InfoField label="מועד תחילת עבודה" value={formatDate(mifal.work_start_date)} />
           <InfoField label="מועד פעיל" value={mifal.date_mode === 'backup' ? 'חלופי' : 'מקורי'} />

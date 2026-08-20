@@ -286,7 +286,7 @@ export function MunicipalitySelect({ value, onChange }) {
   return (
     <div className="relative" ref={ref}>
       <button type="button" onClick={() => setOpen(o => !o)} className={`${inputBase} flex items-center justify-between`} style={inputStyle}>
-        <span className="flex items-center gap-1.5"><MapPin size={14} style={{ color: C.forestLight }} />{value.length ? `${value.length} רשויות נבחרו` : 'בחר רשויות'}</span>
+        <span className="flex items-center gap-1.5"><MapPin size={14} style={{ color: C.forestLight }} />{value.length ? `${value.length} מושבים נבחרו` : 'בחר מושבים'}</span>
         <ChevronDown size={15} style={{ color: C.inkSoft }} />
       </button>
       {open && (
@@ -300,7 +300,7 @@ export function MunicipalitySelect({ value, onChange }) {
               <div key={district} className="mb-2 last:mb-0">
                 <label className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer font-semibold text-xs" style={{ background: '#F2F1E5' }}>
                   <input type="checkbox" checked={distAllSel} onChange={() => toggleDistrict(district)} />{district}
-                  <span className="font-normal mr-auto" style={{ color: C.inkSoft }}>בחר מחוז</span>
+                  <span className="font-normal mr-auto" style={{ color: C.inkSoft }}>בחר תנועה</span>
                 </label>
                 <div className="pr-2 pt-1 flex flex-col gap-1">
                   {towns.map(town => (

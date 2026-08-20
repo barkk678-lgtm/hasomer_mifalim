@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'נוער השומר — ניהול מפעלים',
+  title: 'נוער לב השרון — ניהול מפעלים',
   description: 'מערכת לניהול מפעלים, משימות ותקציב',
 };
 

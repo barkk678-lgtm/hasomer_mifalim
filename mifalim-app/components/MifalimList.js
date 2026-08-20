@@ -52,7 +52,7 @@ export function MifalForm({ draft, setDraft }) {
           {LEAD_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
         </Select>
       </Field>
-      <Field label="רשויות"><MunicipalitySelect value={draft.target_municipalities} onChange={v => set({ target_municipalities: v })} /></Field>
+      <Field label="מושבים"><MunicipalitySelect value={draft.target_municipalities} onChange={v => set({ target_municipalities: v })} /></Field>
       {!isPrep && <Field label="קהל יעד (שכבות גיל)"><AudienceBubbleSelect rows={AUDIENCE_ROWS} value={draft.target_audience} onChange={v => set({ target_audience: v })} /></Field>}
 
       <div className="pt-2 border-t flex flex-col gap-4" style={{ borderColor: C.line }}>

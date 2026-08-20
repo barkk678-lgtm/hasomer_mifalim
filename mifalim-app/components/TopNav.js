@@ -21,7 +21,7 @@ export default function TopNav({ userEmail, role }) {
   return (
     <div className="sticky top-0 z-30 w-full" style={{ background: C.forest }}>
       <div className="max-w-7xl mx-auto px-6 flex items-center gap-6 flex-wrap py-3">
-        <span className="text-white font-bold text-base shrink-0" style={{ fontFamily: 'Rubik, sans-serif' }}>נוער השומר</span>
+        <span className="text-white font-bold text-base shrink-0" style={{ fontFamily: 'Rubik, sans-serif' }}>נוער לב השרון</span>
         <nav className="flex items-center gap-1 flex-wrap flex-1">
           {NAV_ITEMS.map(item => {
             const Icon = item.icon;
